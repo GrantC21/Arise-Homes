@@ -312,6 +312,12 @@ def wait_until_stable(path, checks=3, interval=1.0, timeout=60):
 
 def process_file(path, config):
     folder = path.parent
+
+    if not path.exists():
+        # A duplicate filesystem event for a file another event already
+        # renamed/handled - nothing to do.
+        return
+
     log(f"Detected: {path.name}")
 
     if not wait_until_stable(path):
@@ -390,7 +396,14 @@ class PoViewerHandler(FileSystemEventHandler):
         path = Path(raw_path)
         if path.suffix.lower() != ".pdf":
             return
-        if TRIGGER_TEXT not in path.stem.lower():
+        stem_lower = path.stem.lower()
+        if stem_lower.startswith(ERROR_STEM.lower()):
+            # Never re-trigger on our own error output - renaming a file
+            # inside the watched folder fires a "moved" event, and an
+            # ERROR file's name still contains "po viewer", which would
+            # otherwise cause it to reprocess itself in a loop.
+            return
+        if TRIGGER_TEXT not in stem_lower:
             return
         try:
             process_file(path, self.config)
