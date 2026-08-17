@@ -11,9 +11,12 @@ to:
 If anything can't be confidently determined (unexpected layout, a value not
 yet in the config table, or a filename collision), the file is left alone
 content-wise and instead renamed to "ERROR - PO Viewer.pdf" (or
-"ERROR (1) - PO Viewer.pdf", "ERROR (2) - ..." if that name is already
-taken) so it's obviously flagged and nothing gets overwritten or silently
-mis-named.
+"ERROR - PO Viewer (1).pdf", "(2)", ... if that name is already taken) so
+it's obviously flagged and nothing gets overwritten or silently mis-named.
+
+The lookup tables are re-read whenever po_rename_config.txt changes, so
+adding a new vendor / subdivision / PO type takes effect immediately -
+there's no need to restart the watcher after editing it.
 
 Run this with pythonw.exe (no console window) via a Task Scheduler
 "At log on" trigger. See SETUP.md for step-by-step instructions.
@@ -126,6 +129,53 @@ def load_config(path):
     return {"vendors": vendors, "subdivisions": subdivisions, "po_types": po_types}
 
 
+def describe_config(config):
+    return (
+        f"{len(config['vendors'])} vendors, "
+        f"{len(config['subdivisions'])} subdivisions, "
+        f"{len(config['po_types'])} PO types"
+    )
+
+
+class ConfigLoader:
+    """
+    Serves the lookup tables, re-reading po_rename_config.txt whenever it
+    changes on disk. This means adding a new vendor / subdivision / PO type
+    takes effect on the very next PDF - no need to restart the watcher.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self._mtime = None
+        self._config = None
+
+    def get(self):
+        try:
+            mtime = self.path.stat().st_mtime
+        except OSError as exc:
+            if self._config is not None:
+                log(f"Config unreadable ({exc}); using the last good copy.", logging.WARNING)
+                return self._config
+            raise
+
+        if self._config is not None and mtime == self._mtime:
+            return self._config
+
+        new_config = load_config(self.path)
+
+        # A config with nothing in it usually means we caught the file
+        # mid-save (Notepad truncates then rewrites). Keep the previous
+        # tables rather than failing every PDF until the next edit.
+        if self._config is not None and not any(new_config.values()):
+            log("Config read back empty - keeping the previous tables.", logging.WARNING)
+            return self._config
+
+        self._config = new_config
+        self._mtime = mtime
+        log(f"Loaded config: {describe_config(new_config)}.")
+        return self._config
+
+
 # ----------------------------------------------------------------------
 # PDF field extraction
 # ----------------------------------------------------------------------
@@ -176,17 +226,20 @@ def extract_raw_fields(pdf_path):
         if not pdf.pages:
             return result
         page = pdf.pages[0]
-        all_lines = get_visual_lines(page)
+        left_lines = get_visual_lines(page, x_max=RIGHT_COLUMN_X_MIN)
+        right_lines = get_visual_lines(page, x_min=RIGHT_COLUMN_X_MIN)
 
-        # --- PO Type: search every line for "PO Type: <value>" ---
-        for _, text in all_lines:
-            m = re.match(r"^PO Type:\s*(.+)$", text.strip(), re.IGNORECASE)
+        # --- PO Type: right-hand summary table ---
+        # Restricted to the right column (and matched anywhere in the line
+        # rather than anchored at its start), so left-column content sitting
+        # at the same height can't push the label out of position.
+        for _, text in right_lines:
+            m = re.search(r"PO Type:\s*(.+)$", text.strip(), re.IGNORECASE)
             if m:
                 result["po_type_raw"] = m.group(1).strip()
                 break
 
         # --- Vendor: left column, first line under the "Vendor:" label ---
-        left_lines = get_visual_lines(page, x_max=RIGHT_COLUMN_X_MIN)
         vendor_label_top = None
         for top, text in left_lines:
             if text.strip().rstrip(":").lower() == "vendor":
@@ -201,7 +254,6 @@ def extract_raw_fields(pdf_path):
                 result["vendor_raw"] = below[0][1].strip()
 
         # --- Ship To block: right column, address + plot/lot lines ---
-        right_lines = get_visual_lines(page, x_min=RIGHT_COLUMN_X_MIN)
         shipto_label_top = None
         for top, text in right_lines:
             if "ship to" in text.strip().lower():
@@ -252,6 +304,18 @@ def resolve_po_type(po_type_raw, po_type_table):
     if not po_type_raw:
         return None
     return po_type_table.get(normalize_ws(po_type_raw).lower())
+
+
+# A street address starts with a house number (optionally suffixed, e.g. "123A")
+# followed by the street name. The address is picked positionally - the line
+# directly above the Plat/Lot line - so this guards against grabbing a
+# neighbouring line (e.g. "Arise Homes LLC") when the Ship To block's shape
+# differs from the usual template.
+STREET_ADDRESS_RE = re.compile(r"^\d+[A-Za-z]?\s+\S")
+
+
+def looks_like_street_address(s):
+    return bool(STREET_ADDRESS_RE.match(s or ""))
 
 
 def sanitize_part(s):
@@ -345,6 +409,8 @@ def process_file(path, config):
         missing.append(f"PO type (read: {fields['po_type_raw']!r})")
     if not address:
         missing.append("address")
+    elif not looks_like_street_address(address):
+        missing.append(f"address doesn't look like a street address (read: {address!r})")
 
     if missing:
         log(f"  Could not resolve: {'; '.join(missing)}", logging.WARNING)
@@ -365,6 +431,13 @@ def process_file(path, config):
 
 
 def _mark_error(path, folder):
+    if path.stem.lower().startswith(ERROR_STEM.lower()):
+        # Already flagged (e.g. a --file retry that still can't resolve).
+        # Renaming again would just shuffle it between "ERROR - PO Viewer.pdf"
+        # and "ERROR - PO Viewer (1).pdf" and lose track of which file you
+        # were retrying, so leave the name alone.
+        log("  Still unresolved - leaving the existing ERROR filename as-is.", logging.WARNING)
+        return
     try:
         error_name = unique_error_name(folder)
         path.rename(folder / error_name)
@@ -378,8 +451,8 @@ def _mark_error(path, folder):
 # ----------------------------------------------------------------------
 
 class PoViewerHandler(FileSystemEventHandler):
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, config_loader):
+        self.config_loader = config_loader
 
     def on_created(self, event):
         self._maybe_handle(event.src_path, event.is_directory)
@@ -406,7 +479,7 @@ class PoViewerHandler(FileSystemEventHandler):
         if TRIGGER_TEXT not in stem_lower:
             return
         try:
-            process_file(path, self.config)
+            process_file(path, self.config_loader.get())
         except Exception as exc:
             log(f"Unexpected error processing {path.name}: {exc}", logging.ERROR)
 
@@ -424,11 +497,8 @@ def main():
         log(f"Config file not found: {CONFIG_PATH}", logging.ERROR)
         sys.exit(1)
 
-    config = load_config(CONFIG_PATH)
-    log(
-        f"Loaded config: {len(config['vendors'])} vendors, "
-        f"{len(config['subdivisions'])} subdivisions, {len(config['po_types'])} PO types."
-    )
+    config_loader = ConfigLoader(CONFIG_PATH)
+    config_loader.get()  # load once up front so problems surface at startup
 
     if args.file:
         # Manual retry mode: process one file and exit. Doesn't require the
@@ -437,7 +507,7 @@ def main():
         if not target.exists():
             log(f"File not found: {target}", logging.ERROR)
             sys.exit(1)
-        process_file(target, config)
+        process_file(target, config_loader.get())
         return
 
     if not DOWNLOADS_DIR.exists():
@@ -446,7 +516,7 @@ def main():
 
     log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' ...")
 
-    handler = PoViewerHandler(config)
+    handler = PoViewerHandler(config_loader)
     observer = Observer()
     observer.schedule(handler, str(DOWNLOADS_DIR), recursive=False)
     observer.start()

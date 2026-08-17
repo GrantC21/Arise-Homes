@@ -12,7 +12,7 @@ e.g. `Century_GR31_18460 W 195th Ter_Attic Ladder_17 Aug 2026.pdf`
 
 If it can't confidently read a field, or a value isn't in your lookup table
 yet, or two POs would produce the same filename, it renames the file to
-`ERROR - PO Viewer.pdf` (or `ERROR (1) - PO Viewer.pdf`, etc.) instead of
+`ERROR - PO Viewer.pdf` (or `ERROR - PO Viewer (1).pdf`, etc.) instead of
 guessing — nothing is ever overwritten or silently mis-named.
 
 ## 1. Copy this folder to your PC
@@ -114,13 +114,17 @@ what it renamed it to (or why it couldn't), is logged with a timestamp.
    subdivision, or PO type that isn't in `po_rename_config.txt` yet, printed
    next to "Could not resolve."
 2. Open `po_rename_config.txt` in Notepad, add the missing row under the
-   right section (`#Vendors`, `#Subdivisions`, or `#PO Types`), save.
+   right section (`#Vendors`, `#Subdivisions`, or `#PO Types`), save. The
+   running watcher picks this up automatically — no restart.
 3. Retry that one file without redownloading it — open Command Prompt in
    the tool folder and run:
    ```
    python po_rename_watcher.py --file "C:\Users\<you>\Downloads\ERROR - PO Viewer.pdf"
    ```
-   (Adjust the filename if it's `ERROR (1) - PO Viewer.pdf`, etc.)
+   (Adjust the filename if it's `ERROR - PO Viewer (1).pdf`, etc.)
+
+   If it still can't be resolved, the file keeps its current ERROR name and
+   the log says why — it won't get renumbered on each retry.
 
 ### Editing the lookup table
 
@@ -128,11 +132,8 @@ what it renamed it to (or why it couldn't), is logged with a timestamp.
 Each line is `Full Name | Short Value` (or `Full Name_Short Value` — either
 works). Add new vendors, subdivisions, or PO types as you run into them.
 
-The watcher only loads this file once, at startup, so a change won't take
-effect until it restarts. Either restart your PC (the scheduled task reloads
-it at next log-on), or in Task Scheduler right-click "PO Viewer
-Auto-Renamer" → **End**, then **Run** to restart it immediately with the
-updated table.
+Just save the file — **no restart needed**. The watcher notices the change
+and picks up your edit on the very next PDF it processes.
 
 ### A note on the "Vendor" match rule
 
