@@ -23,12 +23,16 @@ just make sure the file has "PO Viewer" somewhere in its name:
 | | ERP "PO Viewer" export | Excel PO printed to PDF |
 |---|---|---|
 | PO type row | `PO Type:` | `Type:` |
-| Jobsite block | under a `Ship To:` heading | no heading |
 | Subdivision | `GARRETT RANCH THIRD PLAT, Lot 31` | `Garrett Ranch` on its own line |
 | Lot number | `Lot 31` | `Homesite 31` |
 
-A PDF that matches neither layout is flagged as an ERROR rather than
-guessed at.
+The two are told apart by the word `Homesite`, which only the Excel sheet
+uses — some Excel templates also carry a `Ship To:` heading, so that heading
+on its own doesn't identify the layout.
+
+Column positions are measured on each document rather than assumed, so the
+same template still reads correctly at a different scale or margin. A PDF
+matching neither layout is flagged as an ERROR rather than guessed at.
 
 Note that a vendor can be spelled differently between the two (the ERP says
 `McCray Lumber`, the Excel sheet says `McCray Lumber Co`). Add a `#VENDORS`

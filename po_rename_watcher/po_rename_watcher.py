@@ -6,11 +6,13 @@ Watches the Windows Downloads folder. When a PDF whose filename contains
 subdivision / PO type in po_rename_config.txt, and renames the file in place
 to:
 
-Two purchase order templates are recognised and told apart automatically -
-the ERP's PO Viewer export and the Excel purchase order printed to PDF. A
-PDF matching neither is flagged rather than guessed at.
-
     [VendorShort]_[SubdivisionAbbrev][Lot]_[Address]_[PO Type]_[DD Mon YYYY].pdf
+
+Two purchase order templates are recognised and told apart automatically -
+the ERP's PO Viewer export and the Excel purchase order printed to PDF. The
+column positions are measured per document rather than assumed, so the same
+template still parses at a different scale or margin. A PDF matching neither
+layout is flagged rather than guessed at.
 
 If anything can't be confidently determined (unexpected layout, a value not
 yet in the config table, or a filename collision), the file is left alone
@@ -65,9 +67,10 @@ LOG_PATH = LOG_DIR / "po_rename_log.txt"
 TRIGGER_TEXT = "po viewer"          # filename must contain this (case-insensitive)
 ERROR_STEM = "ERROR - PO Viewer"    # base name used when a file can't be processed
 
-# Right-column x-position cutoff (points from left edge of the page) used to
-# separate the Vendor block (left column) from the Ship To / summary-table
-# block (right column). This matches the ERP's fixed PO Viewer template.
+# Fallback x-position (points from the left edge) separating the Vendor
+# block from the jobsite / summary-table block, used only when the gutter
+# between the two columns can't be measured on the page itself. Templates
+# differ in scale and margins, so the measured value is preferred.
 RIGHT_COLUMN_X_MIN = 280
 
 
@@ -369,17 +372,57 @@ def _extract_excel(left_lines, right_lines):
     return fields
 
 
+def find_column_split(page, default=RIGHT_COLUMN_X_MIN):
+    """
+    Measures the gutter between the Vendor column and the jobsite column.
+
+    Templates place these blocks at different scales and margins, so a fixed
+    cutoff eventually lands inside one of the columns. Instead, look at the
+    band of text starting at the "Vendor:" label and take the middle of the
+    widest horizontal gap in it - that's the gutter, wherever it happens to
+    fall on a given template.
+    """
+    words = page.extract_words()
+    vendor_top = None
+    for w in words:
+        if w["text"].strip().rstrip(":").lower() == "vendor":
+            vendor_top = w["top"]
+            break
+    if vendor_top is None:
+        return default
+
+    band = [w for w in words if vendor_top - 5 <= w["top"] <= vendor_top + 80]
+    if not band:
+        return default
+
+    spans = sorted((w["x0"], w["x1"]) for w in band)
+    best_gap, best_mid = 0.0, default
+    cursor = spans[0][1]
+    for x0, x1 in spans[1:]:
+        if x0 - cursor > best_gap:
+            best_gap, best_mid = x0 - cursor, (cursor + x0) / 2
+        cursor = max(cursor, x1)
+
+    # Too narrow to be a column gutter - don't trust it.
+    if best_gap < 30:
+        return default
+    return best_mid
+
+
 def detect_layout(right_lines):
     """
-    Which PO template this is. "Ship To:" only appears on the ERP export and
-    "Homesite" only on the Excel sheet, so either one settles it.
+    Which PO template this is.
+
+    "Homesite" is the decisive marker: only the Excel purchase order uses it
+    (the ERP writes "Lot"). It has to be checked first, because some Excel
+    templates also carry a "Ship To:" heading - so that heading alone means
+    only "not the Excel sheet" once Homesite has been ruled out.
     """
-    for _, text in right_lines:
-        low = text.lower()
-        if "ship to" in low:
-            return "erp"
-        if re.search(r"\bhomesite\s*\d", low):
-            return "excel"
+    joined = " ".join(text for _, text in right_lines).lower()
+    if re.search(r"\bhomesite\s*\d", joined):
+        return "excel"
+    if "ship to" in joined:
+        return "erp"
     return None
 
 
@@ -394,8 +437,9 @@ def extract_raw_fields(pdf_path):
         if not pdf.pages:
             return empty
         page = pdf.pages[0]
-        left_lines = get_visual_lines(page, x_max=RIGHT_COLUMN_X_MIN)
-        right_lines = get_visual_lines(page, x_min=RIGHT_COLUMN_X_MIN)
+        split = find_column_split(page)
+        left_lines = get_visual_lines(page, x_max=split)
+        right_lines = get_visual_lines(page, x_min=split)
 
         layout = detect_layout(right_lines)
         if layout == "erp":
