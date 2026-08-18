@@ -17,16 +17,18 @@ guessing — nothing is ever overwritten or silently mis-named.
 
 ## 1. Copy this folder to your PC
 
-Copy the whole `po_rename_watcher` folder somewhere permanent, e.g.:
-
-```
-C:\Tools\po_rename_watcher\
-```
+Copy the whole `po_rename_watcher` folder anywhere you like — a Documents
+folder, a synced OneDrive folder, wherever you keep your scripts. Just pick a
+permanent home, because the scheduled task will point at it.
 
 It should contain:
 - `po_rename_watcher.py`
 - `po_rename_config.txt`
 - `requirements.txt`
+
+Throughout the rest of these instructions, **"the tool folder"** means
+wherever you put it. A quick way to get its exact path later: open the folder
+in File Explorer, click once in the address bar, and copy the text.
 
 ## 2. Install Python (one-time)
 
@@ -37,10 +39,12 @@ If you don't already have Python:
 
 ## 3. Install the required libraries (one-time)
 
-Open **Command Prompt** (search "cmd" in the Start menu) and run:
+Open **Command Prompt** (search "cmd" in the Start menu) and run the
+following, substituting your own tool folder path. Keep the quotes — they
+matter if the path contains spaces:
 
 ```
-cd C:\Tools\po_rename_watcher
+cd /d "C:\Path\To\po_rename_watcher"
 pip install -r requirements.txt
 ```
 
@@ -85,8 +89,13 @@ silently (no window) from then on.
      `where pythonw` in Command Prompt (typically something like
      `C:\Users\<you>\AppData\Local\Programs\Python\Python312\pythonw.exe`)
    - Add arguments: `po_rename_watcher.py`
-   - Start in: `C:\Tools\po_rename_watcher`
+   - Start in: your tool folder path
    - Click OK
+
+   Paste these as plain text with **no quotes around them** — Task Scheduler
+   treats each box as a literal value, not a command line, so quotes make it
+   look for a file that doesn't exist. Paths containing spaces are fine
+   unquoted here.
 6. **Conditions tab:** uncheck "Start the task only if the computer is on AC
    power" if this is a laptop, otherwise leave defaults.
 7. Click **OK** to save. It'll ask for your Windows password — enter it.
@@ -116,13 +125,12 @@ python po_rename_watcher.py --log
 That prints the log's location and its last 40 lines. Add a number for more
 (`--log 200`).
 
-The log lives in `%LOCALAPPDATA%\PoRenameWatcher\` rather than next to the
-script, deliberately: this tool sits in a OneDrive-synced folder, and writing
-the log on every rename would make OneDrive re-upload it constantly. Paste
-that path into Explorer's address bar to open the folder.
+The log file is `po_rename_log.txt`, in the tool folder alongside the script
+and config.
 
 A new log file starts each day and **7 days of history is kept** — older days
-are deleted automatically, so it never grows without bound.
+are deleted automatically, so it never grows without bound. Previous days are
+kept beside it as `po_rename_log.txt.2026-08-17` and so on.
 
 ### Fixing an ERROR file
 
@@ -135,7 +143,7 @@ are deleted automatically, so it never grows without bound.
 3. Retry that one file without redownloading it — open Command Prompt in
    the tool folder and run:
    ```
-   python po_rename_watcher.py --file "C:\Users\<you>\Downloads\ERROR - PO Viewer.pdf"
+   python po_rename_watcher.py --file "%USERPROFILE%\Downloads\ERROR - PO Viewer.pdf"
    ```
    (Adjust the filename if it's `ERROR - PO Viewer (1).pdf`, etc.)
 

@@ -51,27 +51,11 @@ DOWNLOADS_DIR = Path.home() / "Downloads"
 LOG_RETENTION_DAYS = 7
 
 
-def _default_log_dir():
-    """
-    Somewhere local to write the log.
-
-    Deliberately NOT next to the script: this tool typically lives in a
-    OneDrive-synced folder, and rewriting the log on every rename would make
-    OneDrive re-upload it constantly. %LOCALAPPDATA% is machine-local, so
-    the churn stays off the sync engine.
-    """
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        candidate = Path(base) / "PoRenameWatcher"
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            return candidate
-        except OSError:
-            pass
-    return SCRIPT_DIR
-
-
-LOG_DIR = _default_log_dir()
+# The log sits alongside the script and config so everything to do with the
+# tool lives in one folder. If that folder is synced (OneDrive etc.) the log
+# is re-uploaded whenever it changes, which is a fine trade for keeping it
+# together at this volume.
+LOG_DIR = SCRIPT_DIR
 LOG_PATH = LOG_DIR / "po_rename_log.txt"
 
 TRIGGER_TEXT = "po viewer"          # filename must contain this (case-insensitive)
@@ -88,10 +72,11 @@ class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
     Daily-rotating log handler that won't take the watcher down if the log
     file is momentarily locked.
 
-    On Windows a second process - e.g. a `--file` retry run from Command
-    Prompt while the background watcher is up - can hold the log open and
-    make the rollover rename fail. Rather than raising, keep appending to
-    the current file and retry the rollover a little later.
+    On Windows the log can be held open by something else at the moment we
+    try to roll it over - a `--file` retry run from Command Prompt while the
+    background watcher is up, or a sync client (OneDrive) mid-upload.
+    Rather than raising, keep appending to the current file and retry the
+    rollover a little later.
     """
 
     def doRollover(self):
