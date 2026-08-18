@@ -95,7 +95,7 @@ silently (no window) from then on.
 so it just quietly runs in the background from now on.
 
 **To test it starts correctly:** right-click the task in Task Scheduler and
-choose **Run**. Check `po_rename_log.txt` in the tool folder — it should show
+choose **Run**, then check the log (see below) — it should show
 "Watching ... " within a couple seconds.
 
 ## 6. Day-to-day use
@@ -105,12 +105,28 @@ renamed in place in Downloads within a few seconds.
 
 ### Checking what happened
 
-Open `po_rename_log.txt` in the tool folder any time — every file it sees,
-what it renamed it to (or why it couldn't), is logged with a timestamp.
+Every file it sees — and what it renamed it to, or why it couldn't — is
+logged with a timestamp. The quickest way to read it, from Command Prompt in
+the tool folder:
+
+```
+python po_rename_watcher.py --log
+```
+
+That prints the log's location and its last 40 lines. Add a number for more
+(`--log 200`).
+
+The log lives in `%LOCALAPPDATA%\PoRenameWatcher\` rather than next to the
+script, deliberately: this tool sits in a OneDrive-synced folder, and writing
+the log on every rename would make OneDrive re-upload it constantly. Paste
+that path into Explorer's address bar to open the folder.
+
+A new log file starts each day and **7 days of history is kept** — older days
+are deleted automatically, so it never grows without bound.
 
 ### Fixing an ERROR file
 
-1. Open `po_rename_log.txt` and find why it failed — usually a vendor,
+1. Run `python po_rename_watcher.py --log` and find why it failed — usually a vendor,
    subdivision, or PO type that isn't in `po_rename_config.txt` yet, printed
    next to "Could not resolve."
 2. Open `po_rename_config.txt` in Notepad, add the missing row under the

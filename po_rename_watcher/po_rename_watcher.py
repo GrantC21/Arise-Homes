@@ -24,10 +24,14 @@ Run this with pythonw.exe (no console window) via a Task Scheduler
 
 import argparse
 import logging
+import os
+import queue
 import re
 import sys
+import threading
 import time
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import pdfplumber
@@ -40,8 +44,35 @@ from watchdog.observers import Observer
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "po_rename_config.txt"
-LOG_PATH = SCRIPT_DIR / "po_rename_log.txt"
 DOWNLOADS_DIR = Path.home() / "Downloads"
+
+# Days of log history to keep. Each day gets its own file; anything older
+# than this is deleted automatically.
+LOG_RETENTION_DAYS = 7
+
+
+def _default_log_dir():
+    """
+    Somewhere local to write the log.
+
+    Deliberately NOT next to the script: this tool typically lives in a
+    OneDrive-synced folder, and rewriting the log on every rename would make
+    OneDrive re-upload it constantly. %LOCALAPPDATA% is machine-local, so
+    the churn stays off the sync engine.
+    """
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        candidate = Path(base) / "PoRenameWatcher"
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            pass
+    return SCRIPT_DIR
+
+
+LOG_DIR = _default_log_dir()
+LOG_PATH = LOG_DIR / "po_rename_log.txt"
 
 TRIGGER_TEXT = "po viewer"          # filename must contain this (case-insensitive)
 ERROR_STEM = "ERROR - PO Viewer"    # base name used when a file can't be processed
@@ -51,16 +82,51 @@ ERROR_STEM = "ERROR - PO Viewer"    # base name used when a file can't be proces
 # block (right column). This matches the ERP's fixed PO Viewer template.
 RIGHT_COLUMN_X_MIN = 280
 
-logging.basicConfig(
-    filename=str(LOG_PATH),
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)s  %(message)s",
+
+class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """
+    Daily-rotating log handler that won't take the watcher down if the log
+    file is momentarily locked.
+
+    On Windows a second process - e.g. a `--file` retry run from Command
+    Prompt while the background watcher is up - can hold the log open and
+    make the rollover rename fail. Rather than raising, keep appending to
+    the current file and retry the rollover a little later.
+    """
+
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except OSError:
+            if self.stream is None:
+                try:
+                    self.stream = self._open()
+                except OSError:
+                    pass
+            self.rolloverAt = int(time.time()) + 3600
+
+
+# A logging failure must never crash the renamer.
+logging.raiseExceptions = False
+
+_handler = SafeTimedRotatingFileHandler(
+    str(LOG_PATH),
+    when="midnight",
+    backupCount=LOG_RETENTION_DAYS,
+    encoding="utf-8",
+    delay=True,          # don't create/lock the file until something is logged
 )
+_handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)s  %(message)s"))
+
+_logger = logging.getLogger("po_rename")
+_logger.setLevel(logging.INFO)
+_logger.addHandler(_handler)
+_logger.propagate = False
 
 
 def log(msg, level=logging.INFO):
-    logging.log(level, msg)
-    print(msg)
+    _logger.log(level, msg)
+    print(msg)   # no-op under pythonw.exe, useful when run from a console
 
 
 # ----------------------------------------------------------------------
@@ -350,28 +416,61 @@ def unique_error_name(folder):
 # Processing
 # ----------------------------------------------------------------------
 
-def wait_until_stable(path, checks=3, interval=1.0, timeout=60):
-    """Waits until the file's size stops changing (download finished)."""
-    last_size, stable_count = -1, 0
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if not path.exists():
-            time.sleep(interval)
-            continue
-        try:
-            size = path.stat().st_size
-        except OSError:
-            time.sleep(interval)
-            continue
-        if size == last_size and size > 0:
-            stable_count += 1
-            if stable_count >= checks:
-                return True
-        else:
-            stable_count = 0
-        last_size = size
-        time.sleep(interval)
-    return False
+def looks_like_complete_pdf(path):
+    """
+    True if the file ends with the PDF end-of-file marker, i.e. the download
+    has written the whole document. Lets a finished PDF be picked up
+    immediately instead of sitting through the size-stability wait.
+    """
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            tail_size = min(1024, fh.tell())
+            fh.seek(-tail_size, os.SEEK_END)
+            return b"%%EOF" in fh.read(tail_size)
+    except OSError:
+        return False
+
+
+# How long to keep waiting for a download to finish before giving up on it.
+DOWNLOAD_TIMEOUT = 60
+
+# How long a file lacking the %%EOF marker must hold the same size before
+# it counts as finished. A download can pause mid-transfer, so this has to
+# be comfortably longer than a normal network stall - checking twice in
+# quick succession would call a paused download "complete" and try to read
+# a half-written PDF.
+STABLE_SECONDS = 3.0
+
+# path -> (last observed size, when it first reached that size).
+# Only touched by the worker thread.
+_pending_sizes = {}
+
+
+def is_download_complete(path):
+    """
+    Single, non-blocking readiness check.
+
+    A finished PDF ends with the %%EOF marker, so the usual case is decided
+    instantly and correctly. A file without that marker is only accepted
+    once its size has held steady for STABLE_SECONDS.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size == 0:
+        return False
+    if looks_like_complete_pdf(path):
+        _pending_sizes.pop(path, None)
+        return True
+
+    now = time.time()
+    previous = _pending_sizes.get(path)
+    if previous is None or previous[0] != size:
+        _pending_sizes[path] = (size, now)
+        return False
+    return (now - previous[1]) >= STABLE_SECONDS
 
 
 def process_file(path, config):
@@ -383,10 +482,6 @@ def process_file(path, config):
         return
 
     log(f"Detected: {path.name}")
-
-    if not wait_until_stable(path):
-        log(f"  Gave up waiting for '{path.name}' to finish downloading.", logging.WARNING)
-        return
 
     try:
         fields = extract_raw_fields(path)
@@ -451,8 +546,16 @@ def _mark_error(path, folder):
 # ----------------------------------------------------------------------
 
 class PoViewerHandler(FileSystemEventHandler):
-    def __init__(self, config_loader):
-        self.config_loader = config_loader
+    """
+    Filters filesystem events and hands matching PDFs to a worker thread.
+
+    The actual processing deliberately does NOT happen here: watchdog
+    dispatches events on a single thread, so waiting on a slow or stalled
+    download inline would hold up every PO queued behind it.
+    """
+
+    def __init__(self, work_queue):
+        self.work_queue = work_queue
 
     def on_created(self, event):
         self._maybe_handle(event.src_path, event.is_directory)
@@ -478,10 +581,41 @@ class PoViewerHandler(FileSystemEventHandler):
             return
         if TRIGGER_TEXT not in stem_lower:
             return
+        self.work_queue.put((path, time.time() + DOWNLOAD_TIMEOUT))
+
+
+def worker_loop(work_queue, config_loader, stop_event):
+    """
+    Processes queued PDFs off the watchdog dispatch thread.
+
+    Renames run one at a time, so two POs can never race for the same target
+    filename. A download that isn't finished yet is put back on the queue
+    rather than waited on, so a slow or abandoned file can't hold up the POs
+    behind it.
+    """
+    while not stop_event.is_set():
         try:
-            process_file(path, self.config_loader.get())
+            path, deadline = work_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            if not path.exists():
+                _pending_sizes.pop(path, None)
+                continue
+            if is_download_complete(path):
+                _pending_sizes.pop(path, None)
+                process_file(path, config_loader.get())
+            elif time.time() < deadline:
+                time.sleep(0.2)
+                work_queue.put((path, deadline))
+            else:
+                _pending_sizes.pop(path, None)
+                log(f"Gave up waiting for '{path.name}' to finish downloading.",
+                    logging.WARNING)
         except Exception as exc:
             log(f"Unexpected error processing {path.name}: {exc}", logging.ERROR)
+        finally:
+            work_queue.task_done()
 
 
 def main():
@@ -491,7 +625,28 @@ def main():
         help="Reprocess a single existing PDF (e.g. an ERROR file after you've "
              "fixed the config table) instead of starting the folder watcher.",
     )
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        type=int,
+        const=40,
+        metavar="LINES",
+        help="Show where the log lives and print its last LINES lines "
+             "(default 40), then exit.",
+    )
     args = parser.parse_args()
+
+    if args.log is not None:
+        print(f"Log file: {LOG_PATH}")
+        print(f"Keeping {LOG_RETENTION_DAYS} days of history in: {LOG_DIR}")
+        if not LOG_PATH.exists():
+            print("(nothing logged yet)")
+            return
+        lines = LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+        print(f"--- last {min(args.log, len(lines))} of {len(lines)} lines ---")
+        for line in lines[-args.log:]:
+            print(line)
+        return
 
     if not CONFIG_PATH.exists():
         log(f"Config file not found: {CONFIG_PATH}", logging.ERROR)
@@ -515,17 +670,30 @@ def main():
         sys.exit(1)
 
     log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' ...")
+    log(f"Logging to {LOG_PATH} (keeping {LOG_RETENTION_DAYS} days).")
 
-    handler = PoViewerHandler(config_loader)
+    work_queue = queue.Queue()
+    stop_event = threading.Event()
+    worker = threading.Thread(
+        target=worker_loop,
+        args=(work_queue, config_loader, stop_event),
+        daemon=True,
+    )
+    worker.start()
+
     observer = Observer()
-    observer.schedule(handler, str(DOWNLOADS_DIR), recursive=False)
+    observer.schedule(PoViewerHandler(work_queue), str(DOWNLOADS_DIR), recursive=False)
     observer.start()
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
+        pass
+    finally:
         observer.stop()
-    observer.join()
+        observer.join()
+        stop_event.set()
+        worker.join(timeout=5)
 
 
 if __name__ == "__main__":
