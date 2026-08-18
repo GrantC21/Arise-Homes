@@ -6,6 +6,10 @@ Watches the Windows Downloads folder. When a PDF whose filename contains
 subdivision / PO type in po_rename_config.txt, and renames the file in place
 to:
 
+Two purchase order templates are recognised and told apart automatically -
+the ERP's PO Viewer export and the Excel purchase order printed to PDF. A
+PDF matching neither is flagged rather than guessed at.
+
     [VendorShort]_[SubdivisionAbbrev][Lot]_[Address]_[PO Type]_[DD Mon YYYY].pdf
 
 If anything can't be confidently determined (unexpected layout, a value not
@@ -266,63 +270,139 @@ def get_visual_lines(page, x_min=None, x_max=None, tol=2.5):
     return lines
 
 
+def _find_vendor(left_lines):
+    """First line under the "Vendor:" label in the left column."""
+    vendor_label_top = None
+    for top, text in left_lines:
+        if text.strip().rstrip(":").lower() == "vendor":
+            vendor_label_top = top
+            break
+    if vendor_label_top is None:
+        return None
+    below = sorted(
+        (t for t in left_lines if t[0] > vendor_label_top + 1),
+        key=lambda t: t[0],
+    )
+    if below and (below[0][0] - vendor_label_top) < 40:
+        return below[0][1].strip()
+    return None
+
+
+def _find_po_type(right_lines):
+    """
+    Value of the type row in the right-hand summary table. The ERP labels it
+    "PO Type:" and the Excel sheet just "Type:", so match the shared part.
+    """
+    for _, text in right_lines:
+        m = re.search(r"\bType:\s*(.+)$", text.strip(), re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def _extract_erp(left_lines, right_lines):
+    """
+    The ERP's PO Viewer export. The jobsite sits under a "Ship To:" label,
+    with the plat and lot together on one line and the street address on the
+    line above it:
+
+        Ship To:
+        Arise Homes LLC
+        18460 W 195th Ter
+        GARRETT RANCH THIRD PLAT, Lot 31
+        Spring Hill, KS  66083
+    """
+    fields = {"vendor_raw": _find_vendor(left_lines),
+              "po_type_raw": _find_po_type(right_lines),
+              "address_raw": None, "plot_raw": None}
+
+    shipto_label_top = None
+    for top, text in right_lines:
+        if "ship to" in text.strip().lower():
+            shipto_label_top = top
+            break
+    if shipto_label_top is None:
+        return fields
+
+    block = sorted(
+        (t for t in right_lines if 0 < (t[0] - shipto_label_top) < 100),
+        key=lambda t: t[0],
+    )
+    for i, (_, text) in enumerate(block):
+        if LOT_RE.search(text):
+            fields["plot_raw"] = text.strip()
+            if i > 0:
+                fields["address_raw"] = block[i - 1][1].strip()
+            break
+    return fields
+
+
+def _extract_excel(left_lines, right_lines):
+    """
+    The Excel purchase order printed to PDF. Same two-column shape, but the
+    jobsite block carries no label, the subdivision is on its own line, and
+    the homesite number shares a line with the street address:
+
+        Garrett Ranch
+        Homesite 31, 18460 W 195th Ter
+        Spring Hill, KS 66083
+    """
+    fields = {"vendor_raw": _find_vendor(left_lines),
+              "po_type_raw": _find_po_type(right_lines),
+              "address_raw": None, "plot_raw": None}
+
+    ordered = sorted(right_lines, key=lambda t: t[0])
+    for i, (_, text) in enumerate(ordered):
+        m = LOT_RE.search(text)
+        if not m:
+            continue
+        # "Homesite 31, 18460 W 195th Ter" -> lot part / address part
+        lot_part = text[:m.end()].strip()
+        address_part = text[m.end():].lstrip(" ,").strip()
+        subdivision_line = ordered[i - 1][1].strip() if i > 0 else ""
+        # Pair the subdivision with the lot so the usual lookup applies. The
+        # address is deliberately left out of it, so a street name can't
+        # collide with a subdivision name in the table.
+        fields["plot_raw"] = f"{subdivision_line}, {lot_part}".strip(" ,")
+        fields["address_raw"] = address_part or None
+        break
+    return fields
+
+
+def detect_layout(right_lines):
+    """
+    Which PO template this is. "Ship To:" only appears on the ERP export and
+    "Homesite" only on the Excel sheet, so either one settles it.
+    """
+    for _, text in right_lines:
+        low = text.lower()
+        if "ship to" in low:
+            return "erp"
+        if re.search(r"\bhomesite\s*\d", low):
+            return "excel"
+    return None
+
+
 def extract_raw_fields(pdf_path):
     """
     Returns a dict with vendor_raw, po_type_raw, address_raw, plot_raw.
     Any field that can't be located is None.
     """
-    result = {"vendor_raw": None, "po_type_raw": None, "address_raw": None, "plot_raw": None}
+    empty = {"vendor_raw": None, "po_type_raw": None, "address_raw": None, "plot_raw": None}
 
     with pdfplumber.open(pdf_path) as pdf:
         if not pdf.pages:
-            return result
+            return empty
         page = pdf.pages[0]
         left_lines = get_visual_lines(page, x_max=RIGHT_COLUMN_X_MIN)
         right_lines = get_visual_lines(page, x_min=RIGHT_COLUMN_X_MIN)
 
-        # --- PO Type: right-hand summary table ---
-        # Restricted to the right column (and matched anywhere in the line
-        # rather than anchored at its start), so left-column content sitting
-        # at the same height can't push the label out of position.
-        for _, text in right_lines:
-            m = re.search(r"PO Type:\s*(.+)$", text.strip(), re.IGNORECASE)
-            if m:
-                result["po_type_raw"] = m.group(1).strip()
-                break
-
-        # --- Vendor: left column, first line under the "Vendor:" label ---
-        vendor_label_top = None
-        for top, text in left_lines:
-            if text.strip().rstrip(":").lower() == "vendor":
-                vendor_label_top = top
-                break
-        if vendor_label_top is not None:
-            below = sorted(
-                (t for t in left_lines if t[0] > vendor_label_top + 1),
-                key=lambda t: t[0],
-            )
-            if below and (below[0][0] - vendor_label_top) < 40:
-                result["vendor_raw"] = below[0][1].strip()
-
-        # --- Ship To block: right column, address + plot/lot lines ---
-        shipto_label_top = None
-        for top, text in right_lines:
-            if "ship to" in text.strip().lower():
-                shipto_label_top = top
-                break
-        if shipto_label_top is not None:
-            block = sorted(
-                (t for t in right_lines if 0 < (t[0] - shipto_label_top) < 100),
-                key=lambda t: t[0],
-            )
-            for i, (top, text) in enumerate(block):
-                if re.search(r"\bLot\s*\d+", text, re.IGNORECASE):
-                    result["plot_raw"] = text.strip()
-                    if i > 0:
-                        result["address_raw"] = block[i - 1][1].strip()
-                    break
-
-    return result
+        layout = detect_layout(right_lines)
+        if layout == "erp":
+            return _extract_erp(left_lines, right_lines)
+        if layout == "excel":
+            return _extract_excel(left_lines, right_lines)
+        return empty
 
 
 # ----------------------------------------------------------------------
@@ -337,6 +417,10 @@ def resolve_vendor(vendor_raw, vendor_table):
     return vendor_table.get(truncated.lower())
 
 
+# The ERP writes "Lot 31"; the Excel purchase order writes "Homesite 31".
+LOT_RE = re.compile(r"\b(?:Lot|Homesite)\s*(\d+[A-Za-z]?)", re.IGNORECASE)
+
+
 def resolve_subdivision_and_lot(plot_raw, subdivision_table):
     if not plot_raw:
         return None, None
@@ -345,7 +429,7 @@ def resolve_subdivision_and_lot(plot_raw, subdivision_table):
     if len(matches) != 1:
         return None, None
     _, abbr = matches[0]
-    lot_match = re.search(r"\bLot\s*(\d+[A-Za-z]?)", plot_raw, re.IGNORECASE)
+    lot_match = LOT_RE.search(plot_raw)
     if not lot_match:
         return None, None
     return abbr, lot_match.group(1)

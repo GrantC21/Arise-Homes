@@ -15,6 +15,25 @@ yet, or two POs would produce the same filename, it renames the file to
 `ERROR - PO Viewer.pdf` (or `ERROR - PO Viewer (1).pdf`, etc.) instead of
 guessing — nothing is ever overwritten or silently mis-named.
 
+### Two PO layouts are supported
+
+Both are recognised automatically — you don't pick or configure anything,
+just make sure the file has "PO Viewer" somewhere in its name:
+
+| | ERP "PO Viewer" export | Excel PO printed to PDF |
+|---|---|---|
+| PO type row | `PO Type:` | `Type:` |
+| Jobsite block | under a `Ship To:` heading | no heading |
+| Subdivision | `GARRETT RANCH THIRD PLAT, Lot 31` | `Garrett Ranch` on its own line |
+| Lot number | `Lot 31` | `Homesite 31` |
+
+A PDF that matches neither layout is flagged as an ERROR rather than
+guessed at.
+
+Note that a vendor can be spelled differently between the two (the ERP says
+`McCray Lumber`, the Excel sheet says `McCray Lumber Co`). Add a `#VENDORS`
+row for each spelling you run into — both can point at the same short name.
+
 ## 1. Copy this folder to your PC
 
 Copy the whole `po_rename_watcher` folder anywhere you like — a Documents
@@ -59,8 +78,9 @@ python po_rename_watcher.py
 You should see something like:
 
 ```
-Loaded config: 32 vendors, 9 subdivisions, 1 PO types.
+Loaded config: 32 vendors, 9 subdivisions, 46 PO types.
 Watching C:\Users\<you>\Downloads for files containing 'po viewer' ...
+Logging to ...\po_rename_log.txt (keeping 7 days).
 ```
 
 Leave it running, then download a real PO Viewer PDF from the ERP. Watch it
