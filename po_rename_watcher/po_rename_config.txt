@@ -1,47 +1,99 @@
-#Vendors
-Graycon_Graycon
-Pardos_Pardos
-Century Building Solutions_Century
-Pioneer_Pioneer
-A Total Door_A Total Door
-United Heating & Cooling_United
-S&B_S&B
-G&H_G&H
-Ashler_Ashler
-ACME Brick_ACME
-Gulfeagle Supply_GES
-Reeve's Roofing_Reeves
-Lowes_Lowes
-C4 Insulation_C4
-Midwest Fireplace_Midwest
-CKF_CKF
-Royal Metal_Royal
-Batista Enterprise_Batista
-Emser Tile_Emser
-McCray Lumber_McCray
-Rensen House of Lights_Rensen
-ProSource_ProSource
-MC Flooring_MC Flooring
-KC Granite House_KSG
-Storm Safe Shelter_Storm Safe
-Remcorp_Remcorp
-Metro Appliances_Metro
-Pinnacle Lawn Care_Pinnacle
-Landmark Landscaping_Landmark
-Innerworks_Innerworks
-Diaz Tiles_Dian
-Spurgeon Belle Painting_Spurgeon
+#GUIDE
+What Downloaded PO Says | Naming Convention you Want
 
-#Subdivisions
+#VENDORS
+Graycon | Graycon
+Pardos | Pardos
+Century Building Solutions | Century
+Pioneer | Pioneer
+A Total Door | A Total Door
+United Heating & Cooling | United
+S&B | S&B
+G&H | G&H
+Ashler | Ashler
+ACME Brick | ACME
+Gulfeagle Supply | GES
+Reeve's Roofing | Reeves
+Lowes | Lowes
+C4 Insulation | C4
+Midwest Fireplace | Midwest
+CKF | CKF
+Royal Metal | Royal
+Batista Enterprise | Batista
+Emser Tile | Emser
+McCray Lumber Co | McCray
+Rensen House of Lights | Rensen
+ProSource | ProSource
+MC Flooring | MC Flooring
+KC Granite House | KSG
+Storm Safe Shelter | Storm Safe
+Remcorp | Remcorp
+Metro Appliances | Metro
+Pinnacle Lawn Care | Pinnacle
+Landmark Landscaping | Landmark
+Innerworks | Innerworks
+Diaz Tiles | Diaz
+Spurgeon Belle Painting | Spurgeon
+
+#SUBDIVISIONS
 Garrett Ranch | GR
 Stoneridge South | SRS
 Cedar Crest | CC
 Arbor Lakes | AL
 Greens of Chapel Creek | GoCC
 Piper Creek | PC
-Heather Ridge | HR
+Heather Ridge | HRS
 Tomahawk Valley | TV
 Stoneridge North | SRN
 
-#PO Types
+#PO TYPES
+
+Footing | Footing
+Slab | Slab
+Windows | Windows
+Trusses | Trusses
+Lumber | Lumber
+Garage Door | Garage Door
+Opener | Opener
+Rough In | Rough In
+Finish Trim | Finish Trim
+Ext Door | Ext Door
+Deadbolts | Deadbolts
+Door Hardware | Door Hardware
+2 Sewer & Water | 2 Sewer & Water
+1 Ground Rough | 1 Ground Rough
+3 Top Rough | 3 Top Rough
+4 Final | 4 Final
+Electrical Contract | Electrical Contract
+OSB | OSB
+Brick | Brick
+Roofing Materials | Roofing Materials
+Roofing Contract | Roofing Contract
+Mech Room | Mech Room
+Whole Home | Whole Home
+Walls | Walls
+Ceilings | Ceilings
+Fireplace | Fireplace
+Fireplace Blower | Fireplace Blower
+Cabinets | Cabinets
+Angle Irons | Angle Irons
+Cornice Contract | Cornice Contract
+Tile | Tile
+Trim Package | Trim
+Hardware | Hardware
 Attic Ladder | Attic Ladder
+Fixtures | Fixtures
+LVP | LVP
+Granite | Granite
+Safe Room | Safe Room
+Appliances | Appliances
+Landscaping | Landscaping
+Window Treatments | Window Treatments
+Backsplash | Backsplash
+Shower Tile | Shower Tile
+LVP | LVP
+Prime | Prime
+Walls | Walls
+Trim & Enamel | Trim & Enamel
+Exterior | Exterior
+
