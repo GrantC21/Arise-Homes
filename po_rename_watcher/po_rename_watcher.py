@@ -555,9 +555,42 @@ DOWNLOAD_TIMEOUT = 60
 # a half-written PDF.
 STABLE_SECONDS = 3.0
 
-# path -> (last observed size, when it first reached that size).
-# Only touched by the worker thread.
+# How long to give the browser to release its hold on a finished download
+# before renaming anyway. See is_file_released() for why this is a grace
+# period rather than a hard requirement.
+LOCK_GRACE_SECONDS = 5.0
+
+# path -> (last observed size, when it first reached that size), and
+# path -> when the file was first looked at. Only touched by the worker.
 _pending_sizes = {}
+_first_seen = {}
+
+
+def forget_pending(path):
+    """Drops the bookkeeping for a file we're done tracking."""
+    _pending_sizes.pop(path, None)
+    _first_seen.pop(path, None)
+
+
+def is_file_released(path):
+    """
+    True when nothing else is holding the file open for writing.
+
+    Windows browsers keep the download target open while writing it, so
+    asking for write access fails until they're finished and have closed
+    the handle. That's a firmer signal than the file's contents alone: the
+    PDF end marker reaches disk a moment before the browser lets go, and
+    renaming inside that window leaves an empty file behind at the original
+    name.
+
+    Platforms that don't lock files this way just return True, leaving the
+    size and content checks to decide.
+    """
+    try:
+        with path.open("r+b"):
+            return True
+    except OSError:
+        return False
 
 
 def is_download_complete(path):
@@ -574,11 +607,20 @@ def is_download_complete(path):
         return False
     if size == 0:
         return False
-    if looks_like_complete_pdf(path):
-        _pending_sizes.pop(path, None)
-        return True
 
     now = time.time()
+    first = _first_seen.setdefault(path, now)
+
+    # Prefer to wait for the writer to let go, but don't hang on it forever:
+    # a PDF left open in a viewer could otherwise keep its lock indefinitely
+    # and the PO would never get renamed.
+    if not is_file_released(path) and (now - first) < LOCK_GRACE_SECONDS:
+        return False
+
+    if looks_like_complete_pdf(path):
+        forget_pending(path)
+        return True
+
     previous = _pending_sizes.get(path)
     if previous is None or previous[0] != size:
         _pending_sizes[path] = (size, now)
@@ -713,16 +755,16 @@ def worker_loop(work_queue, config_loader, stop_event):
             continue
         try:
             if not path.exists():
-                _pending_sizes.pop(path, None)
+                forget_pending(path)
                 continue
             if is_download_complete(path):
-                _pending_sizes.pop(path, None)
+                forget_pending(path)
                 process_file(path, config_loader.get())
             elif time.time() < deadline:
                 time.sleep(0.2)
                 work_queue.put((path, deadline))
             else:
-                _pending_sizes.pop(path, None)
+                forget_pending(path)
                 log(f"Gave up waiting for '{path.name}' to finish downloading.",
                     logging.WARNING)
         except Exception as exc:
