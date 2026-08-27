@@ -1,99 +1,100 @@
 #GUIDE
-What Downloaded PO Says | Naming Convention you Want
+What Downloaded PO States | Naming Convention You Want
 
 #VENDORS
-Graycon | Graycon
+Graycon Concrete LLC | Graycon
 Pardos | Pardos
 Century Building Solutions | Century
 Pioneer | Pioneer
 A Total Door | A Total Door
-United Heating & Cooling | United
-S&B | S&B
+United Heating and Cooling | United
+S&B Plumbing | S&B
 G&H | G&H
 Ashler | Ashler
-ACME Brick | ACME
+ACME Brick Co | ACME
 Gulfeagle Supply | GES
 Reeve's Roofing | Reeves
-Lowes | Lowes
-C4 Insulation | C4
+Lowe's | Lowes
+C4 Insulation LLC | C4
 Midwest Fireplace | Midwest
 CKF | CKF
-Royal Metal | Royal
-Batista Enterprise | Batista
+Royal Metal Industries, LLC. | Royal
+Batista Enterprises | Batista
 Emser Tile | Emser
 McCray Lumber Co | McCray
 Rensen House of Lights | Rensen
 ProSource | ProSource
 MC Flooring | MC Flooring
-KC Granite House | KSG
-Storm Safe Shelter | Storm Safe
+KS Granite House | KSG
+Storm Safe Tornado Shelters | Storm Safe
 Remcorp | Remcorp
 Metro Appliances | Metro
 Pinnacle Lawn Care | Pinnacle
 Landmark Landscaping | Landmark
 Innerworks | Innerworks
-Diaz Tiles | Diaz
-Spurgeon Belle Painting | Spurgeon
+Diaz Tile, LLC | Diaz
+Spurgeon Belle Painting LLC | Spurgeon
 
 #SUBDIVISIONS
 Garrett Ranch | GR
 Stoneridge South | SRS
-Cedar Crest | CC
-Arbor Lakes | AL
+Stoneridge Second Plat | SRS
+Cedarcrest | CC
+Arbor Lake | AL
 Greens of Chapel Creek | GoCC
 Piper Creek | PC
 Heather Ridge | HRS
 Tomahawk Valley | TV
 Stoneridge North | SRN
+159th Villas | 159th
 
 #PO TYPES
-
-Footing | Footing
-Slab | Slab
+Concrete Footing | Footing
+Concrete Slab | Slab
 Windows | Windows
 Trusses | Trusses
 Lumber | Lumber
 Garage Door | Garage Door
-Opener | Opener
-Rough In | Rough In
-Finish Trim | Finish Trim
-Ext Door | Ext Door
-Deadbolts | Deadbolts
-Door Hardware | Door Hardware
-2 Sewer & Water | 2 Sewer & Water
-1 Ground Rough | 1 Ground Rough
-3 Top Rough | 3 Top Rough
-4 Final | 4 Final
+Garage Door Opener | Opener
+HVAC 1-Rough | Rough In
+HVAC 2-Trim | Finish Trim
+Door Material-Exterior | Ext Door
+Door Material - Deadbolts | Deadbolts
+Door Material - Hardware | Door Hardware
+Plumbing 2 - Sewer/Water | 2 Sewer & Water
+Plumbing 1 - Ground Rough | 1 Ground Rough
+Plumbing 3 - Top Rough | 3 Top Rough
+Plumbing 4 - Final | 4 Final
 Electrical Contract | Electrical Contract
-OSB | OSB
-Brick | Brick
+Material - OSB | OSB
+Masonry-Material | Brick
 Roofing Materials | Roofing Materials
 Roofing Contract | Roofing Contract
-Mech Room | Mech Room
-Whole Home | Whole Home
-Walls | Walls
-Ceilings | Ceilings
+Sheetrock Material - Mech Room | Mech Room
+Sheetrock Material - Whole Home | Whole Home
+Insulation-Walls | Walls
+Insulation-Ceiling | Ceilings
 Fireplace | Fireplace
 Fireplace Blower | Fireplace Blower
-Cabinets | Cabinets
+Cabinets Material | Cabinets
 Angle Irons | Angle Irons
 Cornice Contract | Cornice Contract
 Tile | Tile
 Trim Package | Trim
 Hardware | Hardware
 Attic Ladder | Attic Ladder
-Fixtures | Fixtures
-LVP | LVP
+Electrical Fixtures | Fixtures
+LVP Flooring Material | LVP
 Granite | Granite
-Safe Room | Safe Room
+Install Safe Room | Safe Room
 Appliances | Appliances
 Landscaping | Landscaping
 Window Treatments | Window Treatments
-Backsplash | Backsplash
-Shower Tile | Shower Tile
-LVP | LVP
-Prime | Prime
-Walls | Walls
-Trim & Enamel | Trim & Enamel
+Tile - Backsplash Contract | Backsplash
+Tile - Showers Contract | Shower Tile
+LVP Installation | LVP
+Painting Contract 1 - Prime | Prime
+Painting Contract 2 - Walls | Walls
+Painting Contract 3 - Trim & Enamel | Trim & Enamel
 Exterior | Exterior
 
