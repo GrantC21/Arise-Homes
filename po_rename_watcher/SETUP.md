@@ -56,6 +56,8 @@ It should contain:
 - `po_rename_config.txt`
 - `requirements.txt`
 
+A `logs` subfolder is created automatically the first time it runs.
+
 Throughout the rest of these instructions, **"the tool folder"** means
 wherever you put it. A quick way to get its exact path later: open the folder
 in File Explorer, click once in the address bar, and copy the text.
@@ -156,12 +158,16 @@ python po_rename_watcher.py --log
 That prints the log's location and its last 40 lines. Add a number for more
 (`--log 200`).
 
-The log file is `po_rename_log.txt`, in the tool folder alongside the script
-and config.
+Logs live in a **`logs` subfolder** of the tool folder, so the daily files
+don't clutter the folder you open to edit the config. The current one is
+`logs\po_rename_log.txt`.
 
 A new log file starts each day and **7 days of history is kept** — older days
-are deleted automatically, so it never grows without bound. Previous days are
-kept beside it as `po_rename_log.txt.2026-08-17` and so on.
+are deleted automatically, so it never grows without bound. Previous days sit
+beside it as `po_rename_log.txt.2026-08-17` and so on.
+
+If you're upgrading from a version that kept logs loose in the tool folder,
+they're moved into `logs` automatically the next time the watcher starts.
 
 ### Fixing an ERROR file
 

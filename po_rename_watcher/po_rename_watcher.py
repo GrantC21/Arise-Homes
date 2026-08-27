@@ -59,12 +59,42 @@ DOWNLOADS_DIR = Path.home() / "Downloads"
 LOG_RETENTION_DAYS = 7
 
 
-# The log sits alongside the script and config so everything to do with the
-# tool lives in one folder. If that folder is synced (OneDrive etc.) the log
-# is re-uploaded whenever it changes, which is a fine trade for keeping it
-# together at this volume.
-LOG_DIR = SCRIPT_DIR
+# Logs live in a "logs" subfolder of the tool folder: still everything in
+# one place, but the daily rotations don't clutter the folder you actually
+# open to edit the config. If that folder is synced (OneDrive etc.) the log
+# is re-uploaded whenever it changes, which is a fine trade at this volume.
+LOG_DIR = SCRIPT_DIR / "logs"
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    LOG_DIR = SCRIPT_DIR
 LOG_PATH = LOG_DIR / "po_rename_log.txt"
+
+
+def _tidy_old_logs():
+    """
+    Moves logs left in the tool folder by an earlier version into the logs
+    subfolder, so upgrading doesn't leave the old ones lying around.
+
+    Only touches this tool's own log files, never overwrites anything
+    already in the subfolder, and gives up quietly - a file the running
+    watcher still holds open is simply left where it is.
+    """
+    if LOG_DIR == SCRIPT_DIR:
+        return
+    for stray in SCRIPT_DIR.glob("po_rename_log.txt*"):
+        if not stray.is_file():
+            continue
+        destination = LOG_DIR / stray.name
+        if destination.exists():
+            continue
+        try:
+            stray.rename(destination)
+        except OSError:
+            pass
+
+
+_tidy_old_logs()
 
 TRIGGER_TEXT = "po viewer"          # filename must contain this (case-insensitive)
 ERROR_STEM = "ERROR - PO Viewer"    # base name used when a file can't be processed
