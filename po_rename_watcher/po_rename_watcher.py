@@ -8,11 +8,13 @@ to:
 
     [VendorShort]_[SubdivisionAbbrev][Lot]_[Address]_[PO Type]_[DD Mon YYYY].pdf
 
-Two purchase order templates are recognised and told apart automatically -
-the ERP's PO Viewer export and the Excel purchase order printed to PDF. The
-column positions are measured per document rather than assumed, so the same
-template still parses at a different scale or margin. A PDF matching neither
-layout is flagged rather than guessed at.
+Several purchase order templates are read by the same code. Rather than
+keying off template-specific wording, the jobsite is located by finding the
+unit marker (Lot / Homesite / BLDG) and reading the block's shape around
+it, and the column positions are measured per document. That covers the
+ERP export, the Excel purchase order printed to PDF, and multi-family POs,
+at whatever scale or margin they happen to use. A PDF with no jobsite
+marker at all is flagged rather than guessed at.
 
 If anything can't be confidently determined (unexpected layout, a value not
 yet in the config table, or a filename collision), the file is left alone
@@ -303,75 +305,6 @@ def _find_po_type(right_lines):
     return None
 
 
-def _extract_erp(left_lines, right_lines):
-    """
-    The ERP's PO Viewer export. The jobsite sits under a "Ship To:" label,
-    with the plat and lot together on one line and the street address on the
-    line above it:
-
-        Ship To:
-        Arise Homes LLC
-        18460 W 195th Ter
-        GARRETT RANCH THIRD PLAT, Lot 31
-        Spring Hill, KS  66083
-    """
-    fields = {"vendor_raw": _find_vendor(left_lines),
-              "po_type_raw": _find_po_type(right_lines),
-              "address_raw": None, "plot_raw": None}
-
-    shipto_label_top = None
-    for top, text in right_lines:
-        if "ship to" in text.strip().lower():
-            shipto_label_top = top
-            break
-    if shipto_label_top is None:
-        return fields
-
-    block = sorted(
-        (t for t in right_lines if 0 < (t[0] - shipto_label_top) < 100),
-        key=lambda t: t[0],
-    )
-    for i, (_, text) in enumerate(block):
-        if LOT_RE.search(text):
-            fields["plot_raw"] = text.strip()
-            if i > 0:
-                fields["address_raw"] = block[i - 1][1].strip()
-            break
-    return fields
-
-
-def _extract_excel(left_lines, right_lines):
-    """
-    The Excel purchase order printed to PDF. Same two-column shape, but the
-    jobsite block carries no label, the subdivision is on its own line, and
-    the homesite number shares a line with the street address:
-
-        Garrett Ranch
-        Homesite 31, 18460 W 195th Ter
-        Spring Hill, KS 66083
-    """
-    fields = {"vendor_raw": _find_vendor(left_lines),
-              "po_type_raw": _find_po_type(right_lines),
-              "address_raw": None, "plot_raw": None}
-
-    ordered = sorted(right_lines, key=lambda t: t[0])
-    for i, (_, text) in enumerate(ordered):
-        m = LOT_RE.search(text)
-        if not m:
-            continue
-        # "Homesite 31, 18460 W 195th Ter" -> lot part / address part
-        lot_part = text[:m.end()].strip()
-        address_part = text[m.end():].lstrip(" ,").strip()
-        subdivision_line = ordered[i - 1][1].strip() if i > 0 else ""
-        # Pair the subdivision with the lot so the usual lookup applies. The
-        # address is deliberately left out of it, so a street name can't
-        # collide with a subdivision name in the table.
-        fields["plot_raw"] = f"{subdivision_line}, {lot_part}".strip(" ,")
-        fields["address_raw"] = address_part or None
-        break
-    return fields
-
-
 def find_column_split(page, default=RIGHT_COLUMN_X_MIN):
     """
     Measures the gutter between the Vendor column and the jobsite column.
@@ -409,21 +342,72 @@ def find_column_split(page, default=RIGHT_COLUMN_X_MIN):
     return best_mid
 
 
-def detect_layout(right_lines):
-    """
-    Which PO template this is.
-
-    "Homesite" is the decisive marker: only the Excel purchase order uses it
-    (the ERP writes "Lot"). It has to be checked first, because some Excel
-    templates also carry a "Ship To:" heading - so that heading alone means
-    only "not the Excel sheet" once Homesite has been ruled out.
-    """
-    joined = " ".join(text for _, text in right_lines).lower()
-    if re.search(r"\bhomesite\s*\d", joined):
-        return "excel"
-    if "ship to" in joined:
-        return "erp"
+def _find_label_top(lines, label):
+    """Vertical position of a standalone label line such as "Vendor:"."""
+    for top, text in lines:
+        if text.strip().rstrip(":").lower() == label:
+            return top
     return None
+
+
+def _jobsite_block(right_lines, vendor_top):
+    """
+    The right-hand jobsite lines, top to bottom.
+
+    Starts at the "Ship To:" heading when there is one, otherwise at the
+    Vendor label's height - the jobsite always sits alongside the vendor
+    block. Either way the summary table above (PO number, Region, Date) is
+    excluded, so a PO number like "PO-C4-WALLS-BLDG10-1" can't be mistaken
+    for a building number.
+    """
+    ordered = sorted(right_lines, key=lambda t: t[0])
+    anchor = _find_label_top(ordered, "ship to")
+    if anchor is None:
+        for top, text in ordered:
+            if "ship to" in text.strip().lower():
+                anchor = top
+                break
+    if anchor is None:
+        anchor = vendor_top
+    if anchor is None:
+        return ordered
+    return [t for t in ordered if -5 <= (t[0] - anchor) < 110 and t[0] > anchor]
+
+
+def _extract_jobsite(right_lines, vendor_top):
+    """
+    Reads the subdivision, unit number and street address off the jobsite.
+
+    The templates lay this out two ways, and which one applies is decided by
+    where the unit marker falls in its line rather than by any keyword - the
+    markers themselves vary (Lot / Homesite / BLDG) and a "Ship To:" heading
+    turns up in both shapes, so neither is a reliable signal:
+
+        18460 W 195th Ter                   marker mid-line: the plat name
+        GARRETT RANCH THIRD PLAT, Lot 31    shares it, address is the line above
+
+        Garrett Ranch                       marker starts the line: the
+        Homesite 31, 18460 W 195th Ter      subdivision is the line above and
+                                            the address follows the marker
+
+    Returns (plot_raw, address_raw), either of which may be None.
+    """
+    block = _jobsite_block(right_lines, vendor_top)
+    for i, (_, raw) in enumerate(block):
+        text = raw.strip()
+        match = UNIT_RE.search(text)
+        if not match:
+            continue
+        above = block[i - 1][1].strip() if i > 0 else ""
+        trailing = text[match.end():].lstrip(" ,").strip()
+        if match.start() == 0 and trailing:
+            # Subdivision above, address on the same line after the marker.
+            # Pair the two so the usual lookup applies; the address is left
+            # out so a street name can't collide with a subdivision entry.
+            return f"{above}, {text[:match.end()].strip()}".strip(" ,"), trailing
+        # Plat and marker share the line; the address is the line above.
+        return text, (above or None)
+    return None, None
 
 
 def extract_raw_fields(pdf_path):
@@ -441,12 +425,16 @@ def extract_raw_fields(pdf_path):
         left_lines = get_visual_lines(page, x_max=split)
         right_lines = get_visual_lines(page, x_min=split)
 
-        layout = detect_layout(right_lines)
-        if layout == "erp":
-            return _extract_erp(left_lines, right_lines)
-        if layout == "excel":
-            return _extract_excel(left_lines, right_lines)
-        return empty
+        vendor_top = _find_label_top(left_lines, "vendor")
+        plot_raw, address_raw = _extract_jobsite(right_lines, vendor_top)
+        if plot_raw is None:
+            # No jobsite marker anywhere - not a purchase order we know how
+            # to read. Leave every field unset so it gets flagged.
+            return empty
+        return {"vendor_raw": _find_vendor(left_lines),
+                "po_type_raw": _find_po_type(right_lines),
+                "address_raw": address_raw,
+                "plot_raw": plot_raw}
 
 
 # ----------------------------------------------------------------------
@@ -461,11 +449,28 @@ def resolve_vendor(vendor_raw, vendor_table):
     return vendor_table.get(truncated.lower())
 
 
-# The ERP writes "Lot 31"; the Excel purchase order writes "Homesite 31".
-LOT_RE = re.compile(r"\b(?:Lot|Homesite)\s*(\d+[A-Za-z]?)", re.IGNORECASE)
+# The marker naming the specific home on the jobsite line. Single-family
+# POs write "Lot 31" (ERP) or "Homesite 31" (Excel); multi-family and villa
+# POs write "BLDG 10". Anchored to a space or line start so it can't match
+# inside a PO number such as "PO-C4-WALLS-BLDG10-1".
+UNIT_RE = re.compile(
+    r"(?:^|\s)(?:Lot|Homesite|Bldg\.?|Building|Unit)\s*#?\s*(\d+[A-Za-z]?)\b",
+    re.IGNORECASE,
+)
+
+
+# Markers that name a building rather than a single-family lot. Building
+# numbers are joined to the subdivision with a dash and lot numbers run
+# straight on, so a villa reads "159-10" where a lot reads "GR31".
+BUILDING_MARKERS = ("bldg", "building", "unit")
 
 
 def resolve_subdivision_and_lot(plot_raw, subdivision_table):
+    """
+    Returns (subdivision abbreviation, unit suffix) - e.g. ("GR", "31") for
+    a lot, or ("159", "-10") for a building. The two concatenate to form the
+    second field of the filename.
+    """
     if not plot_raw:
         return None, None
     text_lower = plot_raw.lower()
@@ -473,10 +478,14 @@ def resolve_subdivision_and_lot(plot_raw, subdivision_table):
     if len(matches) != 1:
         return None, None
     _, abbr = matches[0]
-    lot_match = LOT_RE.search(plot_raw)
-    if not lot_match:
+    unit_match = UNIT_RE.search(plot_raw)
+    if not unit_match:
         return None, None
-    return abbr, lot_match.group(1)
+    marker = unit_match.group(0).strip().split()[0].rstrip(".").lower()
+    number = unit_match.group(1)
+    if marker.startswith(BUILDING_MARKERS):
+        return abbr, f"-{number}"
+    return abbr, number
 
 
 def resolve_po_type(po_type_raw, po_type_table):
@@ -502,10 +511,10 @@ def sanitize_part(s):
     return s.strip(" .")
 
 
-def build_target_filename(vendor_short, subdivision_abbr, lot, address, po_type_value, date_str):
+def build_target_filename(vendor_short, subdivision_abbr, unit_suffix, address, po_type_value, date_str):
     parts = [
         vendor_short,
-        f"{subdivision_abbr}{lot}",
+        f"{subdivision_abbr}{unit_suffix}",
         address,
         po_type_value,
         date_str,
@@ -646,14 +655,14 @@ def process_file(path, config):
         return
 
     vendor_short = resolve_vendor(fields["vendor_raw"], config["vendors"])
-    subdivision_abbr, lot = resolve_subdivision_and_lot(fields["plot_raw"], config["subdivisions"])
+    subdivision_abbr, unit_suffix = resolve_subdivision_and_lot(fields["plot_raw"], config["subdivisions"])
     po_type_value = resolve_po_type(fields["po_type_raw"], config["po_types"])
     address = normalize_ws(fields["address_raw"]) if fields["address_raw"] else None
 
     missing = []
     if not vendor_short:
         missing.append(f"vendor (read: {fields['vendor_raw']!r})")
-    if not subdivision_abbr or not lot:
+    if not subdivision_abbr or not unit_suffix:
         missing.append(f"subdivision/lot (read: {fields['plot_raw']!r})")
     if not po_type_value:
         missing.append(f"PO type (read: {fields['po_type_raw']!r})")
@@ -668,7 +677,7 @@ def process_file(path, config):
         return
 
     date_str = datetime.now().strftime("%d %b %Y")
-    target_name = build_target_filename(vendor_short, subdivision_abbr, lot, address, po_type_value, date_str)
+    target_name = build_target_filename(vendor_short, subdivision_abbr, unit_suffix, address, po_type_value, date_str)
     target_path = folder / target_name
 
     if target_path.exists():

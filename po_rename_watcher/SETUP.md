@@ -15,24 +15,31 @@ yet, or two POs would produce the same filename, it renames the file to
 `ERROR - PO Viewer.pdf` (or `ERROR - PO Viewer (1).pdf`, etc.) instead of
 guessing — nothing is ever overwritten or silently mis-named.
 
-### Two PO layouts are supported
+### Which POs it can read
 
-Both are recognised automatically — you don't pick or configure anything,
-just make sure the file has "PO Viewer" somewhere in its name:
+All of them are handled by the same code, automatically — you don't pick or
+configure a layout, just make sure the file has "PO Viewer" somewhere in its
+name. It copes with the ERP export, the Excel PO printed to PDF, and
+multi-family/villa POs, which write their jobsite differently:
 
-| | ERP "PO Viewer" export | Excel PO printed to PDF |
-|---|---|---|
-| PO type row | `PO Type:` | `Type:` |
-| Subdivision | `GARRETT RANCH THIRD PLAT, Lot 31` | `Garrett Ranch` on its own line |
-| Lot number | `Lot 31` | `Homesite 31` |
+| Jobsite line | Reads as |
+|---|---|
+| `GARRETT RANCH THIRD PLAT, Lot 31` (address on the line above) | `GR31` |
+| `Garrett Ranch` / `Homesite 31, 18460 W 195th Ter` | `GR31` |
+| `159th Villas` / `BLDG 10, 15972 Buena Vista St` | `159-10` |
 
-The two are told apart by the word `Homesite`, which only the Excel sheet
-uses — some Excel templates also carry a `Ship To:` heading, so that heading
-on its own doesn't identify the layout.
+Rather than looking for template-specific wording, it finds the unit marker
+(`Lot`, `Homesite`, `BLDG`, `Building`, `Unit`) and reads the block around
+it. If the marker starts its line, the subdivision is the line above and the
+address follows the marker; if the marker sits mid-line, that line is the
+plat and the address is the line above.
+
+**Building numbers get a dash** (`159-10`) so they're never mistaken for a
+lot number; lot and homesite numbers run straight on (`GR31`).
 
 Column positions are measured on each document rather than assumed, so the
 same template still reads correctly at a different scale or margin. A PDF
-matching neither layout is flagged as an ERROR rather than guessed at.
+with no jobsite marker at all is flagged as an ERROR rather than guessed at.
 
 Note that a vendor can be spelled differently between the two (the ERP says
 `McCray Lumber`, the Excel sheet says `McCray Lumber Co`). Add a `#VENDORS`
