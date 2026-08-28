@@ -524,12 +524,15 @@ def resolve_po_type(po_type_raw, po_type_table):
     return po_type_table.get(normalize_ws(po_type_raw).lower())
 
 
-# A street address starts with a house number (optionally suffixed, e.g. "123A")
-# followed by the street name. The address is picked positionally - the line
-# directly above the Plat/Lot line - so this guards against grabbing a
-# neighbouring line (e.g. "Arise Homes LLC") when the Ship To block's shape
-# differs from the usual template.
-STREET_ADDRESS_RE = re.compile(r"^\d+[A-Za-z]?\s+\S")
+# A street address starts with a house number (optionally suffixed, e.g.
+# "123A") followed by the street name. Duplexes are billed against both
+# halves at once and write the pair as a range - "26055-26057 W. 82nd Ter" -
+# so a second number after a dash is allowed too.
+#
+# The address is picked positionally, so this guards against grabbing a
+# neighbouring line (e.g. "Arise Homes LLC" or a subdivision name) when a
+# jobsite block's shape differs from the usual template.
+STREET_ADDRESS_RE = re.compile(r"^\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?\s+\S")
 
 
 def looks_like_street_address(s):
