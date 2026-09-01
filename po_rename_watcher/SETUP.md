@@ -25,15 +25,17 @@ multi-family/villa POs, which write their jobsite differently:
 | Jobsite line | Reads as |
 |---|---|
 | `GARRETT RANCH THIRD PLAT, Lot 31` (address on the line above) | `GR31` |
+| `Lot 39, GARRETT RANCH THIRD PLAT` (address on the line above) | `GR39` |
 | `Garrett Ranch` / `Homesite 31, 18460 W 195th Ter` | `GR31` |
 | `159th Villas` / `BLDG 10, 15972 Buena Vista St` | `159-10` |
 | `Stoneridge North MF` / `Building 5, 26055-26057 W. 82nd Ter` | `SRN-5` |
 
-Rather than looking for template-specific wording, it finds the unit marker
-(`Lot`, `Homesite`, `BLDG`, `Building`, `Unit`) and reads the block around
-it. If the marker starts its line, the subdivision is the line above and the
-address follows the marker; if the marker sits mid-line, that line is the
-plat and the address is the line above.
+Rather than looking for template-specific wording or a fixed line order, it
+finds the unit marker (`Lot`, `Homesite`, `BLDG`, `Building`, `Unit`) and
+then works out which nearby piece is which by what each one looks like: the
+piece shaped like a street address is the address, and the remaining piece
+is the subdivision. That holds however the ERP orders the line — the plat
+can come before or after the lot number.
 
 **Building numbers get a dash** (`159-10`, `SRN-5`) so they're never mistaken
 for a lot number; lot and homesite numbers run straight on (`GR31`).

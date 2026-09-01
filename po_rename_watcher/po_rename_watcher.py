@@ -408,17 +408,20 @@ def _extract_jobsite(right_lines, vendor_top):
     """
     Reads the subdivision, unit number and street address off the jobsite.
 
-    The templates lay this out two ways, and which one applies is decided by
-    where the unit marker falls in its line rather than by any keyword - the
-    markers themselves vary (Lot / Homesite / BLDG) and a "Ship To:" heading
-    turns up in both shapes, so neither is a reliable signal:
+    The templates arrange these three around the unit marker in every
+    combination seen so far - the plat sometimes leads the marker line and
+    sometimes follows it, and the address sometimes shares that line and
+    sometimes sits on the line above:
 
-        18460 W 195th Ter                   marker mid-line: the plat name
-        GARRETT RANCH THIRD PLAT, Lot 31    shares it, address is the line above
+        18460 W 195th Ter                   18505 W 195th Ter
+        GARRETT RANCH THIRD PLAT, Lot 31    Lot 39, GARRETT RANCH THIRD PLAT
 
-        Garrett Ranch                       marker starts the line: the
-        Homesite 31, 18460 W 195th Ter      subdivision is the line above and
-                                            the address follows the marker
+        Garrett Ranch                       Stoneridge North MF
+        Homesite 31, 18460 W 195th Ter      Building 5, 26055-26057 W. 82nd Ter
+
+    Position is therefore no guide. Each candidate is judged on what it
+    looks like instead: the piece shaped like a street address is the
+    address, and the remaining non-address piece is the subdivision.
 
     Returns (plot_raw, address_raw), either of which may be None.
     """
@@ -428,15 +431,24 @@ def _extract_jobsite(right_lines, vendor_top):
         match = UNIT_RE.search(text)
         if not match:
             continue
+
+        marker = text[match.start():match.end()].strip()
+        before = text[:match.start()].strip(" ,")
+        after = text[match.end():].strip(" ,")
         above = block[i - 1][1].strip() if i > 0 else ""
-        trailing = text[match.end():].lstrip(" ,").strip()
-        if match.start() == 0 and trailing:
-            # Subdivision above, address on the same line after the marker.
-            # Pair the two so the usual lookup applies; the address is left
-            # out so a street name can't collide with a subdivision entry.
-            return f"{above}, {text[:match.end()].strip()}".strip(" ,"), trailing
-        # Plat and marker share the line; the address is the line above.
-        return text, (above or None)
+
+        address = next(
+            (part for part in (after, before, above)
+             if part and looks_like_street_address(part)),
+            None,
+        )
+        subdivision = next(
+            (part for part in (before, after, above)
+             if part and part != address and not looks_like_street_address(part)),
+            "",
+        )
+        plot = f"{subdivision}, {marker}".strip(" ,")
+        return (plot or None), address
     return None, None
 
 
