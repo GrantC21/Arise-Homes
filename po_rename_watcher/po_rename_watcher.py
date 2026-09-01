@@ -754,6 +754,83 @@ def _mark_error(path, folder):
 # Watcher
 # ----------------------------------------------------------------------
 
+# How often to re-scan the watched folder for POs that arrived without a
+# usable filesystem event. Windows delivers directory notifications through
+# a fixed-size buffer, and a burst of downloads (plus the renames this tool
+# makes in the same folder) can overflow it, dropping notifications
+# silently. The scan makes that self-correcting instead of losing the PO.
+SCAN_INTERVAL = 5.0
+
+_queue_lock = threading.Lock()
+_in_flight = set()          # queued or being worked on right now
+_abandoned = {}             # path -> (size, mtime) we already gave up on
+
+
+def is_candidate(path):
+    """Whether a file is a PO this tool should try to rename."""
+    if path.suffix.lower() != ".pdf":
+        return False
+    stem = path.stem.lower()
+    # Never re-trigger on our own error output - renaming a file inside the
+    # watched folder fires an event, and an ERROR file's name still contains
+    # "po viewer", which would otherwise make it reprocess itself in a loop.
+    if stem.startswith(ERROR_STEM.lower()):
+        return False
+    return TRIGGER_TEXT in stem
+
+
+def enqueue_file(work_queue, path):
+    """Queues a PO unless it's already waiting, so the scan can't pile up
+    duplicates of a file the events already reported."""
+    with _queue_lock:
+        if path in _in_flight:
+            return False
+        _in_flight.add(path)
+    work_queue.put((path, time.time() + DOWNLOAD_TIMEOUT))
+    return True
+
+
+def release_file(path, abandoned_stat=None):
+    """Marks a PO as no longer in flight. When given a stat, remembers that
+    this exact file was given up on, so the scan doesn't retry it forever -
+    but a later download reusing the name has a different size or timestamp
+    and gets picked up normally."""
+    with _queue_lock:
+        _in_flight.discard(path)
+        if abandoned_stat is None:
+            _abandoned.pop(path, None)
+        else:
+            _abandoned[path] = abandoned_stat
+
+
+def scan_folder(work_queue, folder):
+    """Queues any PO sitting in the folder that isn't already in hand."""
+    try:
+        entries = list(folder.iterdir())
+    except OSError as exc:
+        log(f"Could not scan {folder}: {exc}", logging.WARNING)
+        return
+    for path in sorted(entries):
+        if not path.is_file() or not is_candidate(path):
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        with _queue_lock:
+            if _abandoned.get(path) == (stat.st_size, stat.st_mtime):
+                continue
+        enqueue_file(work_queue, path)
+
+
+def scan_loop(work_queue, folder, stop_event):
+    while not stop_event.wait(SCAN_INTERVAL):
+        try:
+            scan_folder(work_queue, folder)
+        except Exception as exc:
+            log(f"Unexpected error scanning {folder}: {exc}", logging.ERROR)
+
+
 class PoViewerHandler(FileSystemEventHandler):
     """
     Filters filesystem events and hands matching PDFs to a worker thread.
@@ -761,6 +838,8 @@ class PoViewerHandler(FileSystemEventHandler):
     The actual processing deliberately does NOT happen here: watchdog
     dispatches events on a single thread, so waiting on a slow or stalled
     download inline would hold up every PO queued behind it.
+
+    Events are the fast path, not the only path - see SCAN_INTERVAL.
     """
 
     def __init__(self, work_queue):
@@ -779,18 +858,8 @@ class PoViewerHandler(FileSystemEventHandler):
         if is_directory:
             return
         path = Path(raw_path)
-        if path.suffix.lower() != ".pdf":
-            return
-        stem_lower = path.stem.lower()
-        if stem_lower.startswith(ERROR_STEM.lower()):
-            # Never re-trigger on our own error output - renaming a file
-            # inside the watched folder fires a "moved" event, and an
-            # ERROR file's name still contains "po viewer", which would
-            # otherwise cause it to reprocess itself in a loop.
-            return
-        if TRIGGER_TEXT not in stem_lower:
-            return
-        self.work_queue.put((path, time.time() + DOWNLOAD_TIMEOUT))
+        if is_candidate(path):
+            enqueue_file(self.work_queue, path)
 
 
 def worker_loop(work_queue, config_loader, stop_event):
@@ -810,18 +879,26 @@ def worker_loop(work_queue, config_loader, stop_event):
         try:
             if not path.exists():
                 forget_pending(path)
+                release_file(path)
                 continue
             if is_download_complete(path):
                 forget_pending(path)
+                release_file(path)
                 process_file(path, config_loader.get())
             elif time.time() < deadline:
                 time.sleep(0.2)
-                work_queue.put((path, deadline))
+                work_queue.put((path, deadline))   # stays in flight
             else:
                 forget_pending(path)
+                try:
+                    stat = path.stat()
+                    release_file(path, (stat.st_size, stat.st_mtime))
+                except OSError:
+                    release_file(path)
                 log(f"Gave up waiting for '{path.name}' to finish downloading.",
                     logging.WARNING)
         except Exception as exc:
+            release_file(path)
             log(f"Unexpected error processing {path.name}: {exc}", logging.ERROR)
         finally:
             work_queue.task_done()
@@ -878,7 +955,8 @@ def main():
         log(f"Downloads folder not found: {DOWNLOADS_DIR}", logging.ERROR)
         sys.exit(1)
 
-    log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' ...")
+    log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' "
+        f"(re-scanning every {SCAN_INTERVAL:.0f}s) ...")
     log(f"Logging to {LOG_PATH} (keeping {LOG_RETENTION_DAYS} days).")
 
     work_queue = queue.Queue()
@@ -893,6 +971,17 @@ def main():
     observer = Observer()
     observer.schedule(PoViewerHandler(work_queue), str(DOWNLOADS_DIR), recursive=False)
     observer.start()
+
+    # Catch anything already sitting there - a PO downloaded while the
+    # watcher was stopped, or one whose event went missing on a previous run.
+    scan_folder(work_queue, DOWNLOADS_DIR)
+    scanner = threading.Thread(
+        target=scan_loop,
+        args=(work_queue, DOWNLOADS_DIR, stop_event),
+        daemon=True,
+    )
+    scanner.start()
+
     try:
         while True:
             time.sleep(1)
@@ -903,6 +992,7 @@ def main():
         observer.join()
         stop_event.set()
         worker.join(timeout=5)
+        scanner.join(timeout=5)
 
 
 if __name__ == "__main__":
