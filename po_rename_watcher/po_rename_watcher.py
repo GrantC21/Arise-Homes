@@ -754,12 +754,34 @@ def _mark_error(path, folder):
 # Watcher
 # ----------------------------------------------------------------------
 
-# How often to re-scan the watched folder for POs that arrived without a
-# usable filesystem event. Windows delivers directory notifications through
-# a fixed-size buffer, and a burst of downloads (plus the renames this tool
-# makes in the same folder) can overflow it, dropping notifications
-# silently. The scan makes that self-correcting instead of losing the PO.
-SCAN_INTERVAL = 5.0
+# The folder is re-scanned to catch POs that arrived without a usable
+# filesystem event: Windows delivers directory notifications through a
+# fixed-size buffer, and a burst of downloads (plus the renames this tool
+# makes in the same folder) can overflow it and drop notifications
+# silently.
+#
+# Rather than polling on a timer, a scan is scheduled for this long after
+# the folder last changed, and each new change pushes it back - so a run of
+# downloads produces one scan once they settle, and a quiet machine does no
+# work at all. A dropped notification is recoverable because the events
+# that did survive still arm the scan.
+SCAN_DEBOUNCE = 5.0
+
+# Backstop for the case where every notification in a burst was lost, so
+# nothing armed the debounce. Long enough to cost nothing, short enough
+# that a PO is never stranded for an afternoon.
+SCAN_IDLE_INTERVAL = 300.0
+
+_activity_lock = threading.Lock()
+_last_activity = 0.0
+
+
+def note_activity():
+    """Records that the watched folder changed, arming the debounced scan."""
+    global _last_activity
+    with _activity_lock:
+        _last_activity = time.time()
+
 
 _queue_lock = threading.Lock()
 _in_flight = set()          # queued or being worked on right now
@@ -824,9 +846,24 @@ def scan_folder(work_queue, folder):
 
 
 def scan_loop(work_queue, folder, stop_event):
-    while not stop_event.wait(SCAN_INTERVAL):
+    """
+    Scans once the folder has been quiet for SCAN_DEBOUNCE, and at most
+    once per burst of activity. Waking to compare two timestamps costs
+    nothing; the folder is only actually read when something happened.
+    """
+    last_scan = time.time()
+    while not stop_event.wait(1.0):
         try:
-            scan_folder(work_queue, folder)
+            now = time.time()
+            with _activity_lock:
+                last_activity = _last_activity
+            settled = (
+                last_activity > last_scan
+                and (now - last_activity) >= SCAN_DEBOUNCE
+            )
+            if settled or (now - last_scan) >= SCAN_IDLE_INTERVAL:
+                scan_folder(work_queue, folder)
+                last_scan = time.time()
         except Exception as exc:
             log(f"Unexpected error scanning {folder}: {exc}", logging.ERROR)
 
@@ -839,11 +876,19 @@ class PoViewerHandler(FileSystemEventHandler):
     dispatches events on a single thread, so waiting on a slow or stalled
     download inline would hold up every PO queued behind it.
 
-    Events are the fast path, not the only path - see SCAN_INTERVAL.
+    Events are the fast path, not the only path - see SCAN_DEBOUNCE.
     """
 
     def __init__(self, work_queue):
         self.work_queue = work_queue
+
+    def on_any_event(self, event):
+        # Arm the debounced scan on ANY change in the folder, not just the
+        # ones that look like a PO. A browser writing its temp file or
+        # creating a placeholder is evidence that downloads are happening,
+        # so if one PO's notification was dropped, a neighbouring event
+        # still schedules the scan that finds it.
+        note_activity()
 
     def on_created(self, event):
         self._maybe_handle(event.src_path, event.is_directory)
@@ -956,7 +1001,7 @@ def main():
         sys.exit(1)
 
     log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' "
-        f"(re-scanning every {SCAN_INTERVAL:.0f}s) ...")
+        f"(re-scanning {SCAN_DEBOUNCE:.0f}s after downloads settle) ...")
     log(f"Logging to {LOG_PATH} (keeping {LOG_RETENTION_DAYS} days).")
 
     work_queue = queue.Queue()
