@@ -762,25 +762,21 @@ def _mark_error(path, folder):
 #
 # Rather than polling on a timer, a scan is scheduled for this long after
 # the folder last changed, and each new change pushes it back - so a run of
-# downloads produces one scan once they settle, and a quiet machine does no
-# work at all. A dropped notification is recoverable because the events
-# that did survive still arm the scan.
+# downloads produces one scan once they settle. A dropped notification is
+# recoverable because the events that did survive still arm the scan.
+#
+# There is deliberately no periodic fallback: with nothing happening in the
+# folder, nothing runs at all.
 SCAN_DEBOUNCE = 5.0
 
-# Backstop for the case where every notification in a burst was lost, so
-# nothing armed the debounce. Long enough to cost nothing, short enough
-# that a PO is never stranded for an afternoon.
-SCAN_IDLE_INTERVAL = 300.0
-
-_activity_lock = threading.Lock()
-_last_activity = 0.0
+# Set whenever the watched folder changes, and on shutdown so the waiting
+# scan thread can exit.
+_activity_event = threading.Event()
 
 
 def note_activity():
     """Records that the watched folder changed, arming the debounced scan."""
-    global _last_activity
-    with _activity_lock:
-        _last_activity = time.time()
+    _activity_event.set()
 
 
 _queue_lock = threading.Lock()
@@ -847,23 +843,25 @@ def scan_folder(work_queue, folder):
 
 def scan_loop(work_queue, folder, stop_event):
     """
-    Scans once the folder has been quiet for SCAN_DEBOUNCE, and at most
-    once per burst of activity. Waking to compare two timestamps costs
-    nothing; the folder is only actually read when something happened.
+    Scans once the folder has gone quiet for SCAN_DEBOUNCE, once per burst.
+
+    Blocks until something actually changes rather than waking on a timer,
+    so an idle machine does no work at all - not even a tick.
     """
-    last_scan = time.time()
-    while not stop_event.wait(1.0):
+    while not stop_event.is_set():
         try:
-            now = time.time()
-            with _activity_lock:
-                last_activity = _last_activity
-            settled = (
-                last_activity > last_scan
-                and (now - last_activity) >= SCAN_DEBOUNCE
-            )
-            if settled or (now - last_scan) >= SCAN_IDLE_INTERVAL:
-                scan_folder(work_queue, folder)
-                last_scan = time.time()
+            _activity_event.wait()          # nothing to do until the folder changes
+            if stop_event.is_set():
+                return
+            _activity_event.clear()
+
+            # Hold off while activity continues; each change restarts the wait.
+            while _activity_event.wait(SCAN_DEBOUNCE):
+                if stop_event.is_set():
+                    return
+                _activity_event.clear()
+
+            scan_folder(work_queue, folder)
         except Exception as exc:
             log(f"Unexpected error scanning {folder}: {exc}", logging.ERROR)
 
@@ -1036,6 +1034,7 @@ def main():
         observer.stop()
         observer.join()
         stop_event.set()
+        note_activity()          # wake the scan thread so it can exit
         worker.join(timeout=5)
         scanner.join(timeout=5)
 
