@@ -9,7 +9,7 @@ Pioneer | Pioneer
 A Total Door | A Total Door
 United Heating and Cooling | United
 S&B Plumbing | S&B
-G&H | G&H
+G & H Electric | G&H
 Ashler | Ashler
 ACME Brick Co | ACME
 Gulfeagle Supply | GES
@@ -20,7 +20,7 @@ Midwest Fireplace | Midwest
 CKF | CKF
 Royal Metal Industries, LLC. | Royal
 Batista Enterprises | Batista
-Emser Tile | Emser
+Emser Tile LLC | Emser
 McCray Lumber Co | McCray
 Rensen House of Lights | Rensen
 ProSource | ProSource
@@ -29,11 +29,12 @@ KS Granite House | KSG
 Storm Safe Tornado Shelters | Storm Safe
 Remcorp | Remcorp
 Metro Appliances | Metro
-Pinnacle Lawn Care | Pinnacle
-Landmark Landscaping | Landmark
-Innerworks | Innerworks
+Pinnacle Lawn Care Inc | Pinnacle
+Landmark Landscaping, Inc. | Landmark
+Innerworks KC | Innerworks
 Diaz Tile, LLC | Diaz
 Spurgeon Belle Painting LLC | Spurgeon
+Vortex Heating and Cooling | Vortex
 
 #SUBDIVISIONS
 Garrett Ranch | GR
@@ -46,6 +47,7 @@ Piper Creek | PC
 Heather Ridge | HRS
 Tomahawk Valley | TV
 Stoneridge North | SRN
+Stone Ridge North MF | SRN
 159th Villas | 159
 
 #PO TYPES
@@ -65,7 +67,7 @@ Plumbing 2 - Sewer/Water | 2 Sewer & Water
 Plumbing 1 - Ground Rough | 1 Ground Rough
 Plumbing 3 - Top Rough | 3 Top Rough
 Plumbing 4 - Final | 4 Final
-Electrical Contract | Electrical Contract
+Electrical | Electrical Contract
 Material - OSB | OSB
 Masonry-Material | Brick
 Roofing Materials | Roofing Materials
@@ -74,6 +76,7 @@ Sheetrock Material - Mech Room | Mech Room
 Sheetrock Material - Whole Home | Whole Home
 Insulation-Walls | Walls
 Insulation-Ceiling | Ceilings
+Insulation-Ceilings | Ceilings
 Fireplace | Fireplace
 Fireplace Blower | Fireplace Blower
 Cabinets Material | Cabinets
@@ -88,8 +91,8 @@ LVP Flooring Material | LVP
 Granite | Granite
 Install Safe Room | Safe Room
 Appliances | Appliances
-Landscaping | Landscaping
-Window Treatments | Window Treatments
+Landscaping & Sprinklers | Landscaping
+Window Treatments-OPTION | Window Treatments
 Tile - Backsplash Contract | Backsplash
 Tile - Showers Contract | Shower Tile
 LVP Installation | LVP
