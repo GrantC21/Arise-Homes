@@ -323,15 +323,45 @@ def _find_vendor(left_lines):
     return None
 
 
+# A row of the summary table starts with a short label and a colon
+# ("PO Type:", "Floor Plan:", "Region:"). A line without one, sitting just
+# below, is the tail of a value that wrapped.
+SUMMARY_LABEL_RE = re.compile(r"^[^:]{1,25}:")
+
+# How far below a value a wrapped remainder can sit, and how many such
+# lines to accept. Rows in the summary table are ~15pt apart, so this
+# reaches the next line but not the block further down the page.
+WRAP_MAX_GAP = 20.0
+WRAP_MAX_LINES = 3
+
+
 def _find_po_type(right_lines):
     """
     Value of the type row in the right-hand summary table. The ERP labels it
     "PO Type:" and the Excel sheet just "Type:", so match the shared part.
+
+    A long type wraps onto following lines within the table cell - e.g.
+    "*Trim Material - Interior Trim and" / "Doors" - so any unlabelled line
+    immediately beneath is joined back on. Reading only the first line would
+    mean keeping a lookup entry that stops wherever the text happened to
+    wrap, which breaks as soon as the wording or column width changes.
     """
-    for _, text in right_lines:
+    ordered = sorted(right_lines, key=lambda t: t[0])
+    for i, (top, text) in enumerate(ordered):
         m = re.search(r"\bType:\s*(.+)$", text.strip(), re.IGNORECASE)
-        if m:
-            return m.group(1).strip()
+        if not m:
+            continue
+        parts = [m.group(1).strip()]
+        previous_top = top
+        for next_top, next_text in ordered[i + 1:][:WRAP_MAX_LINES]:
+            candidate = next_text.strip()
+            if (next_top - previous_top) > WRAP_MAX_GAP:
+                break
+            if not candidate or SUMMARY_LABEL_RE.match(candidate):
+                break
+            parts.append(candidate)
+            previous_top = next_top
+        return normalize_ws(" ".join(parts))
     return None
 
 
