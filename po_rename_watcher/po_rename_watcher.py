@@ -639,9 +639,9 @@ DOWNLOAD_TIMEOUT = 60
 # a half-written PDF.
 STABLE_SECONDS = 3.0
 
-# How long to give the browser to release its hold on a finished download
-# before renaming anyway. See is_file_released() for why this is a grace
-# period rather than a hard requirement.
+# How long to keep waiting for a file that can't even be opened for
+# reading before giving up on that check and letting the content and size
+# checks decide.
 LOCK_GRACE_SECONDS = 5.0
 
 # path -> (last observed size, when it first reached that size), and
@@ -654,27 +654,56 @@ def forget_pending(path):
     """Drops the bookkeeping for a file we're done tracking."""
     _pending_sizes.pop(path, None)
     _first_seen.pop(path, None)
+    _finish_warned.discard(path)
 
 
-def is_file_released(path):
+WINDOWS = os.name == "nt"
+
+# How long to wait for the browser to finish its post-download work before
+# renaming anyway. Generous, because it covers an antivirus scan.
+BROWSER_FINISH_GRACE = 15.0
+
+_finish_warned = set()
+
+
+def is_file_readable(path):
     """
-    True when nothing else is holding the file open for writing.
+    True when the file can be opened for reading.
 
-    Windows browsers keep the download target open while writing it, so
-    asking for write access fails until they're finished and have closed
-    the handle. That's a firmer signal than the file's contents alone: the
-    PDF end marker reaches disk a moment before the browser lets go, and
-    renaming inside that window leaves an empty file behind at the original
-    name.
-
-    Platforms that don't lock files this way just return True, leaving the
-    size and content checks to decide.
+    Deliberately read-only. An earlier version asked for write access to
+    detect whether the browser still held the file, but that probe runs
+    every time readiness is checked - repeatedly, while the download is
+    being finalised - and asking for write access to a file Windows is busy
+    scanning can make the scan itself fail.
     """
     try:
-        with path.open("r+b"):
+        with path.open("rb"):
             return True
     except OSError:
         return False
+
+
+def browser_has_finished(path):
+    """
+    True when the browser is done with a download, not merely finished
+    writing its bytes.
+
+    On Windows a completed download is stamped with a Zone.Identifier
+    stream recording that it came from the internet. The call that writes
+    it is the same one that runs the antivirus scan, so its presence means
+    the scan is done and the file is ours to rename. Renaming before then
+    makes that call fail and the browser reports the whole download as
+    failed - "Couldn't download - Virus scan failed".
+
+    Elsewhere there's no such marker, so the size and content checks
+    decide on their own.
+    """
+    if not WINDOWS:
+        return True
+    try:
+        return os.path.exists(f"{path}:Zone.Identifier")
+    except OSError:
+        return True
 
 
 def is_download_complete(path):
@@ -694,12 +723,23 @@ def is_download_complete(path):
 
     now = time.time()
     first = _first_seen.setdefault(path, now)
+    waited = now - first
 
-    # Prefer to wait for the writer to let go, but don't hang on it forever:
-    # a PDF left open in a viewer could otherwise keep its lock indefinitely
-    # and the PO would never get renamed.
-    if not is_file_released(path) and (now - first) < LOCK_GRACE_SECONDS:
+    if not is_file_readable(path) and waited < LOCK_GRACE_SECONDS:
         return False
+
+    # Bytes on disk is not the same as the browser being done: its last step
+    # is the Windows call that scans the file and stamps it. Renaming inside
+    # that window makes the download fail outright, so wait for the stamp -
+    # but not forever, in case a setup never produces one.
+    if not browser_has_finished(path):
+        if waited < BROWSER_FINISH_GRACE:
+            return False
+        if path not in _finish_warned:
+            _finish_warned.add(path)
+            log(f"  '{path.name}' never got its downloaded-from-internet mark "
+                f"after {BROWSER_FINISH_GRACE:.0f}s; renaming anyway.",
+                logging.WARNING)
 
     if looks_like_complete_pdf(path):
         forget_pending(path)
