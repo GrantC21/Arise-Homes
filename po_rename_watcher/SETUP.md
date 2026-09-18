@@ -40,6 +40,14 @@ can come before or after the lot number.
 **Building numbers get a dash** (`159-10`, `SRN-5`) so they're never mistaken
 for a lot number; lot and homesite numbers run straight on (`GR31`).
 
+**On a multi-family PO, a plain lot number is read as building + duplex
+side.** The ERP writes `Lot 32` for building 3, side 2 — the side isn't
+wanted, so that becomes `SRN-3`, and `Lot 101` becomes `SRN-10`. This only
+applies when the `Region:` row says **MF**; a single-family PO keeps its lot
+number exactly as written (`Lot 31` stays `GR31`). An MF lot that doesn't fit
+the pattern — a single digit, or a last digit that isn't 1 or 2 — is flagged
+rather than guessed at.
+
 Duplex addresses covering both halves are kept exactly as written, range and
 all — `26055-26057 W. 82nd Ter`.
 

@@ -335,12 +335,11 @@ WRAP_MAX_GAP = 20.0
 WRAP_MAX_LINES = 3
 
 
-def _find_po_type(right_lines):
+def _find_summary_value(right_lines, label_pattern):
     """
-    Value of the type row in the right-hand summary table. The ERP labels it
-    "PO Type:" and the Excel sheet just "Type:", so match the shared part.
+    Value of one row of the right-hand summary table.
 
-    A long type wraps onto following lines within the table cell - e.g.
+    A long value wraps onto following lines within its cell - e.g.
     "*Trim Material - Interior Trim and" / "Doors" - so any unlabelled line
     immediately beneath is joined back on. Reading only the first line would
     mean keeping a lookup entry that stops wherever the text happened to
@@ -348,7 +347,7 @@ def _find_po_type(right_lines):
     """
     ordered = sorted(right_lines, key=lambda t: t[0])
     for i, (top, text) in enumerate(ordered):
-        m = re.search(r"\bType:\s*(.+)$", text.strip(), re.IGNORECASE)
+        m = re.search(label_pattern, text.strip(), re.IGNORECASE)
         if not m:
             continue
         parts = [m.group(1).strip()]
@@ -363,6 +362,23 @@ def _find_po_type(right_lines):
             previous_top = next_top
         return normalize_ws(" ".join(parts))
     return None
+
+
+def _find_po_type(right_lines):
+    """The ERP labels this row "PO Type:" and the Excel sheet just "Type:",
+    so match the part they share."""
+    return _find_summary_value(right_lines, r"\bType:\s*(.+)$")
+
+
+def _find_region(right_lines):
+    """
+    The "Region:" row, e.g. "JOHNSON COUNTY SF" or "JOHNSON COUNTY MF".
+
+    This is how a multi-family purchase order is told from a single-family
+    one, which decides whether a plain lot number is really a lot or a
+    building-and-side code. See resolve_subdivision_and_lot.
+    """
+    return _find_summary_value(right_lines, r"\bRegion:\s*(.+)$")
 
 
 def find_column_split(page, default=RIGHT_COLUMN_X_MIN):
@@ -487,7 +503,8 @@ def extract_raw_fields(pdf_path):
     Returns a dict with vendor_raw, po_type_raw, address_raw, plot_raw.
     Any field that can't be located is None.
     """
-    empty = {"vendor_raw": None, "po_type_raw": None, "address_raw": None, "plot_raw": None}
+    empty = {"vendor_raw": None, "po_type_raw": None, "address_raw": None,
+             "plot_raw": None, "region_raw": None}
 
     with pdfplumber.open(pdf_path) as pdf:
         if not pdf.pages:
@@ -506,7 +523,8 @@ def extract_raw_fields(pdf_path):
         return {"vendor_raw": _find_vendor(left_lines),
                 "po_type_raw": _find_po_type(right_lines),
                 "address_raw": address_raw,
-                "plot_raw": plot_raw}
+                "plot_raw": plot_raw,
+                "region_raw": _find_region(right_lines)}
 
 
 # ----------------------------------------------------------------------
@@ -536,12 +554,34 @@ UNIT_RE = re.compile(
 # straight on, so a villa reads "159-10" where a lot reads "GR31".
 BUILDING_MARKERS = ("bldg", "building", "unit")
 
+# The Region row marks a purchase order as multi-family.
+MULTIFAMILY_RE = re.compile(r"\bMF\b", re.IGNORECASE)
 
-def resolve_subdivision_and_lot(plot_raw, subdivision_table):
+# On a multi-family PO the ERP can write the jobsite as a plain lot number
+# that actually encodes the building and which half of the duplex it is -
+# "Lot 32" means building 3, side 2. The side is not wanted in the filename.
+DUPLEX_SIDES = ("1", "2")
+
+
+def is_multifamily(region_raw):
+    return bool(region_raw and MULTIFAMILY_RE.search(region_raw))
+
+
+def resolve_subdivision_and_lot(plot_raw, subdivision_table, region_raw=None):
     """
     Returns (subdivision abbreviation, unit suffix) - e.g. ("GR", "31") for
     a lot, or ("159", "-10") for a building. The two concatenate to form the
     second field of the filename.
+
+    A marker that names a building already gives the number wanted. A plain
+    lot number normally does too - except on a multi-family PO, where it is
+    the building followed by the duplex side: "Lot 32" in an MF region is
+    building 3, side 2, and becomes "-3".
+
+    That rewrite is deliberately confined to MF regions. Applied to a
+    single-family PO it would turn lot 31 into building 3, so anything that
+    doesn't fit the pattern - a single digit, or a last digit that isn't a
+    side - is reported as unresolved rather than guessed at.
     """
     if not plot_raw:
         return None, None
@@ -555,8 +595,15 @@ def resolve_subdivision_and_lot(plot_raw, subdivision_table):
         return None, None
     marker = unit_match.group(0).strip().split()[0].rstrip(".").lower()
     number = unit_match.group(1)
+
     if marker.startswith(BUILDING_MARKERS):
         return abbr, f"-{number}"
+
+    if is_multifamily(region_raw):
+        if not number.isdigit() or len(number) < 2 or number[-1] not in DUPLEX_SIDES:
+            return None, None
+        return abbr, f"-{number[:-1]}"
+
     return abbr, number
 
 
@@ -770,7 +817,8 @@ def process_file(path, config):
         return
 
     vendor_short = resolve_vendor(fields["vendor_raw"], config["vendors"])
-    subdivision_abbr, unit_suffix = resolve_subdivision_and_lot(fields["plot_raw"], config["subdivisions"])
+    subdivision_abbr, unit_suffix = resolve_subdivision_and_lot(
+        fields["plot_raw"], config["subdivisions"], fields.get("region_raw"))
     po_type_value = resolve_po_type(fields["po_type_raw"], config["po_types"])
     address = normalize_ws(fields["address_raw"]) if fields["address_raw"] else None
 
@@ -778,7 +826,9 @@ def process_file(path, config):
     if not vendor_short:
         missing.append(f"vendor (read: {fields['vendor_raw']!r})")
     if not subdivision_abbr or not unit_suffix:
-        missing.append(f"subdivision/lot (read: {fields['plot_raw']!r})")
+        missing.append(
+            f"subdivision/lot (read: {fields['plot_raw']!r}, "
+            f"region: {fields.get('region_raw')!r})")
     if not po_type_value:
         missing.append(f"PO type (read: {fields['po_type_raw']!r})")
     if not address:
