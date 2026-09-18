@@ -706,9 +706,14 @@ def forget_pending(path):
 
 WINDOWS = os.name == "nt"
 
-# How long to wait for the browser to finish its post-download work before
-# renaming anyway. Generous, because it covers an antivirus scan.
-BROWSER_FINISH_GRACE = 15.0
+# How long to wait for the internet-source stamp before renaming anyway.
+#
+# Kept short on purpose. Only files that actually came from the internet
+# are ever stamped, so a PDF saved or printed locally - an Excel purchase
+# order, say - will never get one and pays this wait in full. When a stamp
+# is coming it lands about a second after the bytes do, so waiting longer
+# buys very little and slows the local case down for nothing.
+BROWSER_FINISH_GRACE = 3.0
 
 _finish_warned = set()
 
@@ -732,17 +737,22 @@ def is_file_readable(path):
 
 def browser_has_finished(path):
     """
-    True when the browser is done with a download, not merely finished
-    writing its bytes.
+    True when a download's source has finished with the file, not merely
+    finished writing its bytes.
 
-    On Windows a completed download is stamped with a Zone.Identifier
-    stream recording that it came from the internet. The call that writes
-    it is the same one that runs the antivirus scan, so its presence means
-    the scan is done and the file is ours to rename. Renaming before then
-    makes that call fail and the browser reports the whole download as
-    failed - "Couldn't download - Virus scan failed".
+    On Windows a file that came from the internet is stamped with a
+    Zone.Identifier stream. The call that writes it is the same one that
+    runs the antivirus scan, so its presence means the scan is done and the
+    file is ours to rename. Renaming before then makes that call fail and
+    the browser reports the whole download as failed - "Couldn't download -
+    Virus scan failed".
 
-    Elsewhere there's no such marker, so the size and content checks
+    A file that did not come from the internet is never stamped, so this
+    stays False for something saved or printed locally out of Excel. That
+    is what BROWSER_FINISH_GRACE bounds: such a file waits it out once and
+    is then renamed normally.
+
+    Off Windows there is no such marker, so the size and content checks
     decide on their own.
     """
     if not WINDOWS:
@@ -784,9 +794,9 @@ def is_download_complete(path):
             return False
         if path not in _finish_warned:
             _finish_warned.add(path)
-            log(f"  '{path.name}' never got its downloaded-from-internet mark "
-                f"after {BROWSER_FINISH_GRACE:.0f}s; renaming anyway.",
-                logging.WARNING)
+            log(f"  '{path.name}' has no internet-source mark (saved locally "
+                f"rather than downloaded?); renaming after "
+                f"{BROWSER_FINISH_GRACE:.0f}s.")
 
     if looks_like_complete_pdf(path):
         forget_pending(path)
