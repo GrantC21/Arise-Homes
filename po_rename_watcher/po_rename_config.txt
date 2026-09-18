@@ -22,12 +22,13 @@ Royal Metal Industries, LLC. | Royal
 Batista Enterprises | Batista
 Emser Tile LLC | Emser
 McCray Lumber Co | McCray
+McCray Lumber and Millwork | McCray
 Rensen House of Lights | Rensen
 ProSource | ProSource
-MC Flooring | MC Flooring
+MC Flooring, LLC. | MCF
 KS Granite House | KSG
 Storm Safe Tornado Shelters | Storm Safe
-Remcorp | Remcorp
+Remcorp LLC | Remcorp
 Metro Appliances | Metro
 Pinnacle Lawn Care Inc | Pinnacle
 Landmark Landscaping, Inc. | Landmark
@@ -49,6 +50,7 @@ Tomahawk Valley | TV
 Stoneridge North | SRN
 Stone Ridge North MF | SRN
 159th Villas | 159
+MISSION 159 SECOND PLAT | 159
 
 #PO TYPES
 Concrete Footing | Footing
@@ -99,5 +101,7 @@ LVP Installation | LVP
 Painting Contract 1 - Prime | Prime
 Painting Contract 2 - Walls | Walls
 Painting Contract 3 - Trim & Enamel | Trim & Enamel
-Exterior | Exterior
+Exterior Painting | Exterior
+*Trim Material - Interior Trim and Doors | Trim
+*Trim Material - Hardware | Hardware
 
