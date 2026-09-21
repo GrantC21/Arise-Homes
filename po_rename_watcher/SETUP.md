@@ -143,9 +143,15 @@ silently (no window) from then on.
    treats each box as a literal value, not a command line, so quotes make it
    look for a file that doesn't exist. Paths containing spaces are fine
    unquoted here.
-6. **Conditions tab:** uncheck "Start the task only if the computer is on AC
+6. **Triggers tab** → double-click your "At log on" trigger → tick
+   **"Delay task for:"** and pick **30 seconds**. Logging on kicks off a lot
+   at once; this lets the desktop and OneDrive settle first.
+7. **Conditions tab:** uncheck "Start the task only if the computer is on AC
    power" if this is a laptop, otherwise leave defaults.
-7. Click **OK** to save. It'll ask for your Windows password — enter it.
+8. **Settings tab:** tick **"If the task fails, restart every:"** and set
+   **1 minute**, **up to 3 times**. If a start does fail, it picks itself up
+   instead of leaving you without a watcher until you notice.
+9. Click **OK** to save. It'll ask for your Windows password — enter it.
 
 `pythonw.exe` (instead of `python.exe`) runs with no visible console window,
 so it just quietly runs in the background from now on.
@@ -153,6 +159,13 @@ so it just quietly runs in the background from now on.
 **To test it starts correctly:** right-click the task in Task Scheduler and
 choose **Run**, then check the log (see below) — it should show
 "Watching ... " within a couple seconds.
+
+**If it sometimes doesn't start after a reboot:** the script waits up to
+three minutes for its own folder to appear before giving up, which covers a
+tool folder in OneDrive that hasn't finished mounting at log on. The log
+shows "Waiting for the config file to become available" when that happens.
+Steps 6 and 8 above cover the rest — a delayed start and an automatic retry
+if one fails outright.
 
 ## 6. Day-to-day use
 
