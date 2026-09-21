@@ -1077,6 +1077,32 @@ def worker_loop(work_queue, config_loader, stop_event):
             work_queue.task_done()
 
 
+# How long to keep waiting at startup for a folder that isn't there yet.
+#
+# Launched at log on, this can start before the rest of the desktop is
+# ready. The tool folder in particular often lives in a synced location
+# (OneDrive) that hasn't been mounted yet, and giving up at that moment is
+# why a start would occasionally do nothing at all.
+STARTUP_WAIT = 180.0
+
+
+def wait_for_path(path, description, timeout=STARTUP_WAIT):
+    """Waits for a path to appear. True if it did, False if it never came."""
+    deadline = time.time() + timeout
+    announced = False
+    while not path.exists():
+        if time.time() >= deadline:
+            return False
+        if not announced:
+            # Logging may itself be unavailable right now for the same
+            # reason - the handler retries on the next record, so this line
+            # appears as soon as the folder is back.
+            log(f"Waiting for {description} to become available: {path}")
+            announced = True
+        time.sleep(2.0)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1107,8 +1133,8 @@ def main():
             print(line)
         return
 
-    if not CONFIG_PATH.exists():
-        log(f"Config file not found: {CONFIG_PATH}", logging.ERROR)
+    if not wait_for_path(CONFIG_PATH, "the config file"):
+        log(f"Config file never appeared: {CONFIG_PATH}", logging.ERROR)
         sys.exit(1)
 
     config_loader = ConfigLoader(CONFIG_PATH)
@@ -1124,8 +1150,8 @@ def main():
         process_file(target, config_loader.get())
         return
 
-    if not DOWNLOADS_DIR.exists():
-        log(f"Downloads folder not found: {DOWNLOADS_DIR}", logging.ERROR)
+    if not wait_for_path(DOWNLOADS_DIR, "the Downloads folder"):
+        log(f"Downloads folder never appeared: {DOWNLOADS_DIR}", logging.ERROR)
         sys.exit(1)
 
     log(f"Watching {DOWNLOADS_DIR} for files containing '{TRIGGER_TEXT}' "
