@@ -38,6 +38,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -1184,8 +1185,47 @@ def main():
     try:
         while True:
             time.sleep(1)
+
+            # Everything above runs on background threads, and a thread that
+            # dies takes its job with it silently - the process stays up,
+            # looking healthy, doing nothing. Notice that and put it back.
+            if not observer.is_alive():
+                log("Folder watch stopped; restarting it.", logging.WARNING)
+                try:
+                    observer.stop()
+                    observer.join(timeout=5)
+                except Exception:
+                    pass
+                try:
+                    observer = Observer()
+                    observer.schedule(PoViewerHandler(work_queue),
+                                      str(DOWNLOADS_DIR), recursive=False)
+                    observer.start()
+                    # Pick up anything that landed while it was down.
+                    scan_folder(work_queue, DOWNLOADS_DIR)
+                    log("Folder watch restarted.")
+                except Exception as exc:
+                    log(f"Could not restart the folder watch: {exc}", logging.ERROR)
+
+            if not worker.is_alive():
+                log("Rename worker stopped; restarting it.", logging.WARNING)
+                worker = threading.Thread(
+                    target=worker_loop,
+                    args=(work_queue, config_loader, stop_event),
+                    daemon=True,
+                )
+                worker.start()
+
+            if not scanner.is_alive():
+                log("Folder scan stopped; restarting it.", logging.WARNING)
+                scanner = threading.Thread(
+                    target=scan_loop,
+                    args=(work_queue, DOWNLOADS_DIR, stop_event),
+                    daemon=True,
+                )
+                scanner.start()
     except KeyboardInterrupt:
-        pass
+        log("Stopping (interrupted).")
     finally:
         observer.stop()
         observer.join()
@@ -1193,7 +1233,18 @@ def main():
         note_activity()          # wake the scan thread so it can exit
         worker.join(timeout=5)
         scanner.join(timeout=5)
+        log("Watcher stopped.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        # Under pythonw.exe there is no console, so without this an
+        # unexpected exit leaves nothing at all to explain why the watcher
+        # disappeared. Record it before going.
+        log(f"Stopped unexpectedly: {exc!r}\n{traceback.format_exc()}",
+            logging.ERROR)
+        raise
