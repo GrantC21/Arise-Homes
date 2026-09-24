@@ -1086,6 +1086,11 @@ def worker_loop(work_queue, config_loader, stop_event):
 # why a start would occasionally do nothing at all.
 STARTUP_WAIT = 180.0
 
+# How long to wait before trying the folder watch again when restarting it
+# failed, so a folder that is temporarily gone doesn't produce a error a
+# second until it comes back.
+WATCH_RETRY_BACKOFF = 30.0
+
 
 def wait_for_path(path, description, timeout=STARTUP_WAIT):
     """Waits for a path to appear. True if it did, False if it never came."""
@@ -1182,6 +1187,7 @@ def main():
     )
     scanner.start()
 
+    retry_watch_at = 0.0
     try:
         while True:
             time.sleep(1)
@@ -1189,7 +1195,7 @@ def main():
             # Everything above runs on background threads, and a thread that
             # dies takes its job with it silently - the process stays up,
             # looking healthy, doing nothing. Notice that and put it back.
-            if not observer.is_alive():
+            if not observer.is_alive() and time.time() >= retry_watch_at:
                 log("Folder watch stopped; restarting it.", logging.WARNING)
                 try:
                     observer.stop()
@@ -1203,9 +1209,15 @@ def main():
                     observer.start()
                     # Pick up anything that landed while it was down.
                     scan_folder(work_queue, DOWNLOADS_DIR)
+                    retry_watch_at = 0.0
                     log("Folder watch restarted.")
                 except Exception as exc:
-                    log(f"Could not restart the folder watch: {exc}", logging.ERROR)
+                    # Can't restart yet - the folder may be briefly gone.
+                    # Back off rather than retrying, and logging, every second.
+                    retry_watch_at = time.time() + WATCH_RETRY_BACKOFF
+                    log(f"Could not restart the folder watch ({exc}); "
+                        f"trying again in {WATCH_RETRY_BACKOFF:.0f}s.",
+                        logging.ERROR)
 
             if not worker.is_alive():
                 log("Rename worker stopped; restarting it.", logging.WARNING)
