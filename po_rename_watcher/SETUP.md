@@ -146,8 +146,18 @@ silently (no window) from then on.
 6. **Triggers tab** → double-click your "At log on" trigger → tick
    **"Delay task for:"** and pick **30 seconds**. Logging on kicks off a lot
    at once; this lets the desktop and OneDrive settle first.
-7. **Conditions tab:** uncheck "Start the task only if the computer is on AC
-   power" if this is a laptop, otherwise leave defaults.
+7. **Conditions tab — do both of these.** The second one is the important
+   one: on a laptop it stops the watcher the moment you unplug, mid-session,
+   with no warning.
+   - **"Stop if the computer switches to battery power"** — untick it.
+   - **"Start the task only if the computer is on AC power"** — untick it.
+
+   Windows greys the battery-stop box out when the AC box is unticked, so
+   the order matters: make sure **"Start the task only if the computer is on
+   AC power" is ticked first**, untick the battery-stop box underneath it,
+   and only then untick the AC box. Unticking the AC box alone leaves the
+   battery-stop setting switched on underneath, which is what makes this so
+   easy to miss.
 8. **Settings tab:** tick **"If the task fails, restart every:"** and set
    **1 minute**, **up to 3 times**. If a start does fail, it picks itself up
    instead of leaving you without a watcher until you notice.
@@ -166,6 +176,60 @@ tool folder in OneDrive that hasn't finished mounting at log on. The log
 shows "Waiting for the config file to become available" when that happens.
 Steps 6 and 8 above cover the rest — a delayed start and an automatic retry
 if one fails outright.
+
+### If it stops partway through the day
+
+Two very different things look identical from the outside, and the log tells
+them apart. Run `python po_rename_watcher.py --log 200`:
+
+- **A "Watching ..." line at your last log on, then it goes quiet** — it
+  started fine and Windows stopped a healthy process. That's a Task
+  Scheduler condition, almost always the battery one in step 7.
+- **No "Watching ..." line at all** — it never started. That's a startup
+  problem, covered above.
+
+**To see exactly why Windows stopped it:** open Task Scheduler, click
+**Task Scheduler (Local)** at the top of the left-hand tree, and click
+**Enable All Tasks History** in the **Actions pane on the far right** (not
+the View menu — it isn't there). Then select the task and open its
+**History** tab. It names the reason outright, e.g. stopping the task
+because the computer moved to battery power.
+
+**To check every setting at once**, including ones the UI greys out and
+hides the real value of, run this in **PowerShell**:
+
+```
+Export-ScheduledTask -TaskName "PO Viewer Auto-Renamer"
+```
+
+In the XML that prints, these four should read:
+
+```
+<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+<StopOnIdleEnd>false</StopOnIdleEnd>
+<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+```
+
+`PT72H` in that last one means the 3-day run limit is still switched on. To
+set all four correctly without hunting through tabs:
+
+```
+$t = Get-ScheduledTask -TaskName "PO Viewer Auto-Renamer"
+$t.Settings.ExecutionTimeLimit         = "PT0S"
+$t.Settings.DisallowStartIfOnBatteries = $false
+$t.Settings.StopIfGoingOnBatteries     = $false
+$t.Settings.IdleSettings.StopOnIdleEnd = $false
+Set-ScheduledTask -InputObject $t
+```
+
+**If Task Scheduler keeps getting in the way**, you can drop it entirely:
+press `Win+R`, type `shell:startup`, and put a shortcut in that folder
+pointing at `pythonw.exe po_rename_watcher.py` with **Start in** set to the
+tool folder. The Startup folder has no timeouts, no power conditions and no
+idle rules — it just launches at log on. You give up the automatic
+restart-on-failure from step 8, which only helps when a task *fails* rather
+than being *stopped*.
 
 ## 6. Day-to-day use
 
