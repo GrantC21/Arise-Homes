@@ -36,6 +36,7 @@ Innerworks KC | Innerworks
 Diaz Tile, LLC | Diaz
 Spurgeon Belle Painting LLC | Spurgeon
 Vortex Heating and Cooling | Vortex
+Union Marble and Granite | Union
 
 #SUBDIVISIONS
 Garrett Ranch | GR
@@ -97,11 +98,13 @@ Landscaping & Sprinklers | Landscaping
 Window Treatments-OPTION | Window Treatments
 Tile - Backsplash Contract | Backsplash
 Tile - Showers Contract | Shower Tile
-LVP Installation | LVP
+LVP Installation | LVP Install
 Painting Contract 1 - Prime | Prime
 Painting Contract 2 - Walls | Walls
 Painting Contract 3 - Trim & Enamel | Trim & Enamel
 Exterior Painting | Exterior
 *Trim Material - Interior Trim and Doors | Trim
 *Trim Material - Hardware | Hardware
+Trim Material - Trim and Doors | Trim
+Trim Material - Hardware | Hardware
 
