@@ -568,6 +568,33 @@ def is_multifamily(region_raw):
     return bool(region_raw and MULTIFAMILY_RE.search(region_raw))
 
 
+def match_subdivision(plot_raw, subdivision_table):
+    """
+    The abbreviation for the subdivision named on the jobsite line, or None.
+
+    Matching is by substring, so one jobsite can match several rows at once:
+    "Stoneridge North MF" contains both the "Stoneridge North" row and a
+    "Stoneridge North MF" row. The longest name wins, because the longest
+    one that appears in the text is by definition the most specific
+    description of this jobsite - a shorter row can only match as a prefix
+    or fragment of it.
+
+    Only a genuine conflict is refused: two equally long names that
+    disagree on the abbreviation. Several rows pointing at the same
+    abbreviation - a spelling variant, or a plain and an MF version of one
+    community - is not a conflict and resolves normally.
+    """
+    text_lower = plot_raw.lower()
+    matches = [(full, abbr) for full, abbr in subdivision_table if full in text_lower]
+    if not matches:
+        return None
+    longest = max(len(full) for full, _ in matches)
+    best = {abbr for full, abbr in matches if len(full) == longest}
+    if len(best) != 1:
+        return None
+    return best.pop()
+
+
 def resolve_subdivision_and_lot(plot_raw, subdivision_table, region_raw=None):
     """
     Returns (subdivision abbreviation, unit suffix) - e.g. ("GR", "31") for
@@ -586,11 +613,9 @@ def resolve_subdivision_and_lot(plot_raw, subdivision_table, region_raw=None):
     """
     if not plot_raw:
         return None, None
-    text_lower = plot_raw.lower()
-    matches = [(full, abbr) for full, abbr in subdivision_table if full in text_lower]
-    if len(matches) != 1:
+    abbr = match_subdivision(plot_raw, subdivision_table)
+    if abbr is None:
         return None, None
-    _, abbr = matches[0]
     unit_match = UNIT_RE.search(plot_raw)
     if not unit_match:
         return None, None
@@ -627,6 +652,21 @@ STREET_ADDRESS_RE = re.compile(r"^\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?\s+\S")
 
 def looks_like_street_address(s):
     return bool(STREET_ADDRESS_RE.match(s or ""))
+
+
+# The ERP writes the direction both ways depending on the template - one
+# gives "26044 W 82nd Ter", another "26055-26057 W. 82nd Ter" for the house
+# next door. The filename should read the same either way, so a period
+# after an abbreviated direction is dropped. Everything else about the
+# address is kept exactly as printed, including the range across both
+# halves of a duplex.
+DIRECTION_PERIOD_RE = re.compile(r"\b([NSEW])\.(?=\s|[NSEW]\.)", re.IGNORECASE)
+
+
+def tidy_address(s):
+    if not s:
+        return None
+    return normalize_ws(DIRECTION_PERIOD_RE.sub(r"\1", s)) or None
 
 
 def sanitize_part(s):
@@ -831,7 +871,7 @@ def process_file(path, config):
     subdivision_abbr, unit_suffix = resolve_subdivision_and_lot(
         fields["plot_raw"], config["subdivisions"], fields.get("region_raw"))
     po_type_value = resolve_po_type(fields["po_type_raw"], config["po_types"])
-    address = normalize_ws(fields["address_raw"]) if fields["address_raw"] else None
+    address = tidy_address(fields["address_raw"])
 
     missing = []
     if not vendor_short:

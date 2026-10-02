@@ -48,8 +48,11 @@ number exactly as written (`Lot 31` stays `GR31`). An MF lot that doesn't fit
 the pattern — a single digit, or a last digit that isn't 1 or 2 — is flagged
 rather than guessed at.
 
-Duplex addresses covering both halves are kept exactly as written, range and
-all — `26055-26057 W. 82nd Ter`.
+Duplex addresses covering both halves are kept as written, range and all —
+`26055-26057 W. 82nd Ter` becomes `26055-26057 W 82nd Ter`. The only thing
+changed is the period after the direction, because the ERP prints it on some
+templates and not others (`26044 W 82nd Ter` for the house next door), and the
+filename should read the same either way.
 
 Column positions are measured on each document rather than assumed, so the
 same template still reads correctly at a different scale or margin. A PDF
@@ -286,6 +289,14 @@ works). Add new vendors, subdivisions, or PO types as you run into them.
 
 Just save the file — **no restart needed**. The watcher notices the change
 and picks up your edit on the very next PDF it processes.
+
+**Several rows can point at the same short value**, and more than one can
+match the same PO. `Stoneridge North` and `Stoneridge North MF` both match a
+Stoneridge North MF jobsite; the longer, more specific row is the one used, and
+since both say `SRN` it makes no difference here. That's how to add a spelling
+the ERP or an Excel sheet uses without disturbing the row you already have.
+The one thing it won't do is choose between two equally specific rows that
+disagree on the short value — that's flagged as an ERROR rather than guessed.
 
 ### A note on the "Vendor" match rule
 
