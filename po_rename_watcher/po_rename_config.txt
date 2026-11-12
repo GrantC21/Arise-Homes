@@ -5,7 +5,7 @@ What Downloaded PO States | Naming Convention You Want
 Graycon Concrete LLC | Graycon
 Pardos | Pardos
 Century Building Solutions | Century
-Pioneer | Pioneer
+Pioneer Truss | Pioneer
 A Total Door | A Total Door
 United Heating and Cooling | United
 S&B Plumbing | S&B
@@ -26,6 +26,7 @@ McCray Lumber and Millwork | McCray
 Rensen House of Lights | Rensen
 ProSource | ProSource
 MC Flooring, LLC. | MCF
+MC Flooring, LLC | MCF
 KS Granite House | KSG
 Storm Safe Tornado Shelters | Storm Safe
 Remcorp LLC | Remcorp
@@ -37,6 +38,13 @@ Diaz Tile, LLC | Diaz
 Spurgeon Belle Painting LLC | Spurgeon
 Vortex Heating and Cooling | Vortex
 Union Marble and Granite | Union
+Powers Electric | Powers
+M&B Painting & Granite | M&B
+KC Stone LLC | KCS
+First Class Industries, LLC | First
+FBM Logistics | FBM
+Daltile | Daltile
+OPB Construction | OPB
 
 #SUBDIVISIONS
 Garrett Ranch | GR
@@ -46,11 +54,11 @@ Cedarcrest | CC
 Arbor Lake | AL
 Greens of Chapel Creek | GoCC
 Piper Creek | PC
-Heather Ridge | HRS
+Heather Ridge | HR
 Tomahawk Valley | TV
 Stoneridge North | SRN
-Stoneridge North MF | SRN
 Stone Ridge North MF | SRN
+Stoneridge North MF | SRN
 159th Villas | 159
 MISSION 159 SECOND PLAT | 159
 
@@ -58,12 +66,13 @@ MISSION 159 SECOND PLAT | 159
 Concrete Footing | Footing
 Concrete Slab | Slab
 Windows | Windows
-Trusses | Trusses
-Lumber | Lumber
+Framing Material-Trusses | Trusses
+Framing Material-Lumber Package | Lumber
 Garage Door | Garage Door
 Garage Door Opener | Opener
 HVAC 1-Rough | Rough In
 HVAC 2-Trim | Finish Trim
+HVAC Finish | Finish Trim
 Door Material-Exterior | Ext Door
 Door Material - Deadbolts | Deadbolts
 Door Material - Hardware | Door Hardware
@@ -74,6 +83,8 @@ Plumbing 4 - Final | 4 Final
 Electrical | Electrical Contract
 Material - OSB | OSB
 Masonry-Material | Brick
+Masonry-Material-Stone | Stone
+Masonry-Stone Material | Stone
 Roofing Materials | Roofing Materials
 Roofing Contract | Roofing Contract
 Sheetrock Material - Mech Room | Mech Room
@@ -87,6 +98,7 @@ Cabinets Material | Cabinets
 Angle Irons | Angle Irons
 Cornice Contract | Cornice Contract
 Tile | Tile
+Tile Material | Tile
 Trim Package | Trim
 Hardware | Hardware
 Attic Ladder | Attic Ladder
@@ -104,8 +116,8 @@ Painting Contract 1 - Prime | Prime
 Painting Contract 2 - Walls | Walls
 Painting Contract 3 - Trim & Enamel | Trim & Enamel
 Exterior Painting | Exterior
-*Trim Material - Interior Trim and Doors | Trim
-*Trim Material - Hardware | Hardware
-Trim Material - Trim and Doors | Trim
+Trim Material - Interior Trim and Doors | Trim
 Trim Material - Hardware | Hardware
+Hardware Contract | Hardware Contract
+Masonry | Masonry Contract
 
